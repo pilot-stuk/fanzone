@@ -258,20 +258,30 @@ const Utils = {
      * Telegram Web App utilities
      */
     isTelegramWebApp() {
-        // Check if we're in a proper Telegram Web App environment
+        // Check if Telegram Web App API is available
         if (!window.Telegram || !window.Telegram.WebApp) {
             return false;
         }
         
-        // If on GitHub Pages or localhost, force development mode
-        if (window.location.hostname.includes('github.io') || 
-            window.location.hostname === 'localhost' ||
-            window.location.hostname === '127.0.0.1') {
-            return false;
+        // Check if we have actual Telegram context data
+        const tgWebApp = window.Telegram.WebApp;
+        const hasInitData = !!(tgWebApp.initData || tgWebApp.initDataUnsafe?.user);
+        const isExpanded = tgWebApp.isExpanded;
+        const hasViewport = tgWebApp.viewportHeight > 0;
+        
+        // If we have clear indicators of Telegram environment, use it
+        if (hasInitData || isExpanded || hasViewport) {
+            return true;
         }
         
-        // Check for actual Telegram Web App context
-        return !!(window.Telegram.WebApp.initData || window.Telegram.WebApp.initDataUnsafe);
+        // For development/testing, check URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('tgWebAppData') || urlParams.has('tgWebAppStartParam')) {
+            return true;
+        }
+        
+        // Default to false (development mode)
+        return false;
     },
     
     getTelegramUser() {

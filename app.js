@@ -346,6 +346,7 @@ class FanZoneApp {
         
         const userNameElement = Utils.getElementById('user-name');
         const userPointsElement = Utils.getElementById('user-points');
+        const appModeElement = Utils.getElementById('app-mode');
         
         if (userNameElement) {
             userNameElement.textContent = Utils.truncateText(this.user.username || 'User', 15);
@@ -353,6 +354,21 @@ class FanZoneApp {
         
         if (userPointsElement) {
             userPointsElement.textContent = `${Utils.formatPoints(this.user.points)} pts`;
+        }
+        
+        // Show mode indicator
+        if (appModeElement) {
+            if (Utils.isTelegramWebApp()) {
+                appModeElement.textContent = 'Telegram';
+                appModeElement.style.background = 'var(--success-color)';
+                if (CONFIG.DEBUG) {
+                    appModeElement.style.display = 'inline-block';
+                }
+            } else {
+                appModeElement.textContent = 'Demo';
+                appModeElement.style.background = 'var(--warning-color)';
+                appModeElement.style.display = 'inline-block';
+            }
         }
     }
     

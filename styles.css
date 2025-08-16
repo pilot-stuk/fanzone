@@ -116,6 +116,17 @@ body {
     font-size: 12px;
 }
 
+.mode-badge {
+    background: var(--warning-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 /* Page Content */
 .page-content {
     flex: 1;
