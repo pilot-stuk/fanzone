@@ -258,7 +258,20 @@ const Utils = {
      * Telegram Web App utilities
      */
     isTelegramWebApp() {
-        return !!(window.Telegram && window.Telegram.WebApp);
+        // Check if we're in a proper Telegram Web App environment
+        if (!window.Telegram || !window.Telegram.WebApp) {
+            return false;
+        }
+        
+        // If on GitHub Pages or localhost, force development mode
+        if (window.location.hostname.includes('github.io') || 
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1') {
+            return false;
+        }
+        
+        // Check for actual Telegram Web App context
+        return !!(window.Telegram.WebApp.initData || window.Telegram.WebApp.initDataUnsafe);
     },
     
     getTelegramUser() {

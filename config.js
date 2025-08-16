@@ -88,7 +88,7 @@ const CONFIG = {
     },
     
     // Development Settings
-    DEBUG: false, // Set to true for development logging
+    DEBUG: true, // Set to true for development logging
     
     // Analytics (Google Analytics 4 - free tier)
     ANALYTICS: {
