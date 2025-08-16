@@ -10,10 +10,44 @@
     
     <!-- Telegram Web App specific meta tags -->
     <meta name="telegram-web-app" content="true">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, shrink-to-fit=no">
     
-    <!-- Theme color for Telegram integration -->
+    <!-- Theme colors for Telegram integration -->
     <meta name="theme-color" content="#3390ec">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="format-detection" content="telephone=no">
+    
+    <!-- Open Graph for sharing -->
+    <meta property="og:title" content="FanZone - Digital Gifts for Sports Fans">
+    <meta property="og:description" content="Collect exclusive digital gifts from your favorite sports clubs!">
+    <meta property="og:image" content="https://pilot-stuk.github.io/fanzone/og-image.png">
+    <meta property="og:type" content="website">
+    
+    <!-- Telegram Web App Script - Load Early -->
+    <script>
+        // Telegram Web App initialization
+        window.addEventListener('DOMContentLoaded', function() {
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+                
+                // Apply Telegram theme immediately
+                const tg = window.Telegram.WebApp;
+                if (tg.themeParams) {
+                    const root = document.documentElement;
+                    Object.keys(tg.themeParams).forEach(key => {
+                        root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, tg.themeParams[key]);
+                    });
+                    
+                    // Add dark theme class if needed
+                    if (tg.colorScheme === 'dark') {
+                        document.body.classList.add('theme-dark');
+                    }
+                }
+            }
+        });
+    </script>
     
     <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -108,9 +142,14 @@
     <!-- Load all JavaScript modules -->
     <script src="config.js"></script>
     <script src="utils.js"></script>
+    <script src="auth.js"></script>
+    <script src="database/realtime-config.js"></script>
     <script src="app.js"></script>
     <script src="gifts.js"></script>
     <script src="leaderboard.js"></script>
     <script src="profile.js"></script>
+    
+    <!-- Database testing (development mode only) -->
+    <script src="database/test-operations.js"></script>
 </body>
 </html>

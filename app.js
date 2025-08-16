@@ -142,82 +142,34 @@ class FanZoneApp {
     }
     
     async authenticateUser() {
-        const telegramUser = CONFIG.TELEGRAM.USER_DATA;
-        
-        if (!telegramUser) {
-            throw new Error('No Telegram user data available');
-        }
-        
         try {
-            // For MVP without Supabase, create local user
-            if (!this.supabase) {
-                this.user = {
-                    id: telegramUser.id,
-                    telegram_id: telegramUser.id,
-                    username: telegramUser.username || `${telegramUser.first_name} ${telegramUser.last_name}`,
-                    first_name: telegramUser.first_name,
-                    last_name: telegramUser.last_name,
-                    points: Utils.getStorage(CONFIG.STORAGE_KEYS.USER_DATA, {}).points || CONFIG.POINTS.INITIAL_POINTS,
-                    total_gifts: 0,
-                    created_at: new Date().toISOString()
-                };
-                
-                // Save to localStorage for MVP
-                Utils.setStorage(CONFIG.STORAGE_KEYS.USER_DATA, this.user);
-                
-                this.updateUserDisplay();
-                return;
+            // Use AuthManager for authentication
+            await window.AuthManager.init();
+            
+            if (!window.AuthManager.isUserAuthenticated()) {
+                throw new Error('Authentication failed via AuthManager');
             }
             
-            // Check if user exists in database
-            const { data: existingUser, error: fetchError } = await this.supabase
-                .from(CONFIG.TABLES.USERS)
-                .select('*')
-                .eq('telegram_id', telegramUser.id)
-                .single();
+            this.user = window.AuthManager.getUser();
             
-            if (fetchError && fetchError.code !== 'PGRST116') {
-                throw fetchError;
+            if (!this.user) {
+                throw new Error('No user data after authentication');
             }
             
-            if (existingUser) {
-                // Update last login
-                const { error: updateError } = await this.supabase
-                    .from(CONFIG.TABLES.USERS)
-                    .update({ last_login: new Date().toISOString() })
-                    .eq('telegram_id', telegramUser.id);
-                
-                if (updateError) {
-                    Utils.logError(updateError, 'Update last login');
-                }
-                
-                this.user = existingUser;
-            } else {
-                // Create new user
-                const newUser = {
-                    telegram_id: telegramUser.id,
-                    username: telegramUser.username || `${telegramUser.first_name} ${telegramUser.last_name}`,
-                    points: CONFIG.POINTS.INITIAL_POINTS,
-                    total_gifts: 0
-                };
-                
-                const { data: createdUser, error: createError } = await this.supabase
-                    .from(CONFIG.TABLES.USERS)
-                    .insert([newUser])
-                    .select()
-                    .single();
-                
-                if (createError) {
-                    throw createError;
-                }
-                
-                this.user = createdUser;
-                
-                // Track new user
-                this.trackEvent('user_registered');
-            }
+            // Set up Telegram-specific handlers
+            window.AuthManager.setupTelegramHandlers();
             
             this.updateUserDisplay();
+            
+            // Track successful authentication
+            this.trackEvent('user_login', {
+                user_id: this.user.telegram_id,
+                auth_method: Utils.isTelegramWebApp() ? 'telegram' : 'demo'
+            });
+            
+            if (CONFIG.DEBUG) {
+                console.log('User authenticated via AuthManager:', this.user.username);
+            }
             
         } catch (error) {
             Utils.logError(error, 'User authentication');
