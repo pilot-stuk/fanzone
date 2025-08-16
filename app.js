@@ -1,186 +1,191 @@
-// Main application logic for FanZone Telegram Mini App
-// This file handles app initialization, navigation, and core functionality
+// Refactored Main Application
+// Following SOLID principles with proper dependency injection
 
-class FanZoneApp {
-    constructor() {
+class FanZoneApplication {
+    constructor(container) {
+        this.container = container;
         this.currentPage = 'gifts';
-        this.user = null;
-        this.supabase = null;
         this.isInitialized = false;
         
-        // Bind methods
-        this.init = this.init.bind(this);
-        this.initTelegram = this.initTelegram.bind(this);
-        this.initSupabase = this.initSupabase.bind(this);
-        this.authenticateUser = this.authenticateUser.bind(this);
-        this.setupNavigation = this.setupNavigation.bind(this);
-        this.navigateToPage = this.navigateToPage.bind(this);
+        // Services will be injected
+        this.logger = null;
+        this.eventBus = null;
+        this.authService = null;
+        this.userService = null;
+        this.giftService = null;
+        this.platformAdapter = null;
+        
+        // UI Controllers
+        this.giftsController = null;
+        this.profileController = null;
+        this.leaderboardController = null;
     }
     
-    // ======================
-    // Initialization
-    // ======================
-    
-    async init() {
+    /**
+     * Initialize the application
+     */
+    async initialize() {
         try {
-            Utils.showLoading('Initializing FanZone...');
+            console.log('🚀 Starting FanZone Application...');
             
-            // Wait minimum time for better UX
-            await Utils.sleep(CONFIG.UI.LOADING_MIN_TIME);
+            // Show loading screen
+            this.showLoading('Initializing FanZone...');
             
-            // Initialize Telegram Web App
-            await this.initTelegram();
+            // Initialize DI Container
+            await this.container.initializeApp();
             
-            // Initialize Supabase (when credentials are available)
-            await this.initSupabase();
+            // Get services from container
+            this.injectServices();
             
-            // Authenticate user
-            await this.authenticateUser();
+            // Setup event handlers
+            this.setupEventHandlers();
             
-            // Setup UI
-            this.setupNavigation();
-            this.setupErrorHandling();
-            this.applyTelegramTheme();
+            // Initialize UI
+            await this.initializeUI();
             
-            // Initialize pages
-            this.initializePages();
-            
-            // Show main app
-            Utils.hideLoading();
-            Utils.showElement('main-app');
-            
-            // Track page view
-            this.trackEvent('app_initialized');
+            // Hide loading and show app
+            this.hideLoading();
+            this.showMainApp();
             
             this.isInitialized = true;
             
-            Utils.showToast(CONFIG.MESSAGES.INFO.WELCOME, 'success');
+            this.logger.info('Application initialized successfully');
+            this.showToast('Welcome to FanZone! 🎁', 'success');
+            
+            // Navigate to initial page
+            this.navigateToPage(this.currentPage);
             
         } catch (error) {
-            Utils.logError(error, 'App initialization');
+            this.logger?.error('Application initialization failed', error);
             this.handleInitializationError(error);
         }
     }
     
-    async initTelegram() {
-        if (!Utils.isTelegramWebApp()) {
-            // Development mode - create mock user
-            CONFIG.TELEGRAM.USER_DATA = {
-                id: 12345,
-                first_name: 'Test',
-                last_name: 'User',
-                username: 'testuser'
-            };
-            
-            if (CONFIG.DEBUG) {
-                console.log('Running in development mode with mock user');
-            }
-            return;
-        }
+    /**
+     * Inject services from DI container
+     */
+    injectServices() {
+        this.logger = this.container.get('logger');
+        this.eventBus = this.container.get('eventBus');
+        this.authService = this.container.get('authService');
+        this.userService = this.container.get('userService');
+        this.giftService = this.container.get('giftService');
+        this.platformAdapter = this.container.get('platformAdapter');
         
-        try {
-            // Initialize Telegram Web App
-            window.Telegram.WebApp.ready();
-            window.Telegram.WebApp.expand();
-            
-            // Get user data
-            CONFIG.TELEGRAM.USER_DATA = window.Telegram.WebApp.initDataUnsafe?.user;
-            
-            if (!CONFIG.TELEGRAM.USER_DATA) {
-                throw new Error('Unable to get Telegram user data');
-            }
-            
-            // Set up Telegram Web App handlers
-            window.Telegram.WebApp.onEvent('viewportChanged', () => {
-                this.handleViewportChange();
-            });
-            
-            // Enable closing confirmation
-            window.Telegram.WebApp.enableClosingConfirmation();
-        } catch (error) {
-            // Fallback to development mode if Telegram API fails
-            CONFIG.TELEGRAM.USER_DATA = {
-                id: 12345,
-                first_name: 'Demo',
-                last_name: 'User',
-                username: 'demouser'
-            };
-            
-            console.warn('Telegram Web App initialization failed, using fallback mode:', error);
-        }
+        this.logger.debug('Services injected successfully');
     }
     
-    async initSupabase() {
-        // Check if Supabase credentials are configured
-        if (!CONFIG.SUPABASE.URL || !CONFIG.SUPABASE.ANON_KEY) {
-            console.warn('Supabase credentials not configured. Some features will be limited.');
-            return;
-        }
+    /**
+     * Setup event handlers
+     */
+    setupEventHandlers() {
+        // Authentication events
+        this.eventBus.subscribe('auth:success', (data) => {
+            this.handleAuthSuccess(data);
+        });
         
-        try {
-            // Initialize Supabase client
-            this.supabase = window.supabase.createClient(
-                CONFIG.SUPABASE.URL,
-                CONFIG.SUPABASE.ANON_KEY
-            );
-            
-            // Test connection
-            const { error } = await this.supabase.from(CONFIG.TABLES.USERS).select('count').limit(1);
-            
-            if (error) {
-                throw error;
-            }
-            
-            if (CONFIG.DEBUG) {
-                console.log('Supabase connected successfully');
-            }
-            
-        } catch (error) {
-            Utils.logError(error, 'Supabase initialization');
-            throw new Error('Failed to connect to database');
-        }
-    }
-    
-    async authenticateUser() {
-        try {
-            // Use AuthManager for authentication
-            await window.AuthManager.init();
-            
-            if (!window.AuthManager.isUserAuthenticated()) {
-                throw new Error('Authentication failed via AuthManager');
-            }
-            
-            this.user = window.AuthManager.getUser();
-            
-            if (!this.user) {
-                throw new Error('No user data after authentication');
-            }
-            
-            // Set up Telegram-specific handlers
-            window.AuthManager.setupTelegramHandlers();
-            
+        this.eventBus.subscribe('auth:failed', (data) => {
+            this.handleAuthFailed(data);
+        });
+        
+        this.eventBus.subscribe('auth:logout', () => {
+            this.handleLogout();
+        });
+        
+        // User events
+        this.eventBus.subscribe('user:points:updated', (data) => {
             this.updateUserDisplay();
-            
-            // Track successful authentication
-            this.trackEvent('user_login', {
-                user_id: this.user.telegram_id,
-                auth_method: Utils.isTelegramWebApp() ? 'telegram' : 'demo'
-            });
-            
-            if (CONFIG.DEBUG) {
-                console.log('User authenticated via AuthManager:', this.user.username);
-            }
-            
-        } catch (error) {
-            Utils.logError(error, 'User authentication');
-            throw new Error('Authentication failed');
-        }
+        });
+        
+        // Gift events
+        this.eventBus.subscribe('gift:purchased', (data) => {
+            this.handleGiftPurchased(data);
+        });
+        
+        // Navigation events
+        this.eventBus.subscribe('navigation:back', () => {
+            this.handleBackNavigation();
+        });
+        
+        // Telegram events
+        this.eventBus.subscribe('mainbutton:clicked', () => {
+            this.handleMainButtonClick();
+        });
+        
+        this.eventBus.subscribe('theme:changed', () => {
+            this.applyTheme();
+        });
+        
+        // Network events
+        window.addEventListener('online', () => {
+            this.eventBus.emit('network:online');
+            this.showToast('Connection restored', 'success');
+        });
+        
+        window.addEventListener('offline', () => {
+            this.eventBus.emit('network:offline');
+            this.showToast('No internet connection', 'warning');
+        });
+        
+        // Error handling
+        window.addEventListener('error', (event) => {
+            this.logger.error('Global error', event.error);
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            this.logger.error('Unhandled promise rejection', event.reason);
+        });
     }
     
-    // ======================
-    // UI Setup
-    // ======================
+    /**
+     * Initialize UI components
+     */
+    async initializeUI() {
+        // Setup navigation
+        this.setupNavigation();
+        
+        // Initialize controllers
+        this.initializeControllers();
+        
+        // Apply theme
+        this.applyTheme();
+        
+        // Update user display
+        this.updateUserDisplay();
+        
+        // Setup Telegram UI elements
+        this.setupTelegramUI();
+    }
     
+    /**
+     * Initialize page controllers
+     */
+    initializeControllers() {
+        // Create controllers with injected services
+        this.giftsController = new window.GiftsController(
+            this.giftService,
+            this.userService,
+            this.logger,
+            this.eventBus
+        );
+        
+        this.profileController = new window.ProfileController(
+            this.userService,
+            this.giftService,
+            this.logger,
+            this.eventBus
+        );
+        
+        this.leaderboardController = new window.LeaderboardController(
+            this.userService,
+            this.logger,
+            this.eventBus
+        );
+    }
+    
+    /**
+     * Setup navigation
+     */
     setupNavigation() {
         const navButtons = document.querySelectorAll('.nav-btn');
         
@@ -188,243 +193,286 @@ class FanZoneApp {
             btn.addEventListener('click', () => {
                 const page = btn.dataset.page;
                 this.navigateToPage(page);
-                Utils.hapticFeedback('light');
+                this.platformAdapter.sendHapticFeedback('light');
             });
         });
     }
     
+    /**
+     * Navigate to a page
+     */
     navigateToPage(page) {
-        // Update navigation
+        // Update navigation UI
         document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.classList.remove('active');
+            btn.classList.toggle('active', btn.dataset.page === page);
         });
-        document.querySelector(`[data-page="${page}"]`).classList.add('active');
         
-        // Update pages
+        // Update page visibility
         document.querySelectorAll('.page').forEach(p => {
-            p.classList.remove('active');
+            p.classList.toggle('active', p.id === `${page}-page`);
         });
-        document.getElementById(`${page}-page`).classList.add('active');
         
         this.currentPage = page;
         
-        // Track page view
-        this.trackEvent('page_view', { page });
-        
-        // Trigger page-specific initialization
+        // Initialize page content
         this.initializePage(page);
-    }
-    
-    initializePage(page) {
-        switch (page) {
-            case 'gifts':
-                if (window.GiftsManager) {
-                    window.GiftsManager.init();
-                }
-                break;
-            case 'leaderboard':
-                if (window.LeaderboardManager) {
-                    window.LeaderboardManager.init();
-                }
-                break;
-            case 'profile':
-                if (window.ProfileManager) {
-                    window.ProfileManager.init();
-                }
-                break;
-        }
-    }
-    
-    initializePages() {
-        // Initialize all page managers
-        if (window.GiftsManager) {
-            window.GiftsManager.init();
-        }
-        if (window.LeaderboardManager) {
-            window.LeaderboardManager.init();
-        }
-        if (window.ProfileManager) {
-            window.ProfileManager.init();
-        }
-    }
-    
-    setupErrorHandling() {
-        // Global error handler
-        window.addEventListener('error', (event) => {
-            Utils.logError(event.error, 'Global error');
-        });
         
-        // Unhandled promise rejection handler
-        window.addEventListener('unhandledrejection', (event) => {
-            Utils.logError(event.reason, 'Unhandled promise rejection');
-        });
+        // Track navigation
+        this.eventBus.emit('navigation:page:changed', { page });
+        
+        this.logger.debug('Navigated to page', { page });
     }
     
-    applyTelegramTheme() {
-        if (!Utils.isTelegramWebApp()) return;
+    /**
+     * Initialize specific page
+     */
+    async initializePage(page) {
+        try {
+            switch (page) {
+                case 'gifts':
+                    await this.giftsController?.initialize();
+                    break;
+                case 'profile':
+                    await this.profileController?.initialize();
+                    break;
+                case 'leaderboard':
+                    await this.leaderboardController?.initialize();
+                    break;
+            }
+        } catch (error) {
+            this.logger.error(`Failed to initialize ${page} page`, error);
+            this.showToast(`Failed to load ${page}`, 'error');
+        }
+    }
+    
+    /**
+     * Setup Telegram-specific UI
+     */
+    setupTelegramUI() {
+        const user = this.authService.getCurrentUser();
         
-        const themeParams = window.Telegram.WebApp.themeParams;
+        if (this.platformAdapter.isAvailable() && user) {
+            // Setup main button for new users
+            if (!user.total_gifts || user.total_gifts === 0) {
+                this.platformAdapter.showMainButton('🎁 Start Collecting!', () => {
+                    this.navigateToPage('gifts');
+                    this.platformAdapter.hideMainButton();
+                });
+            }
+        }
+    }
+    
+    /**
+     * Handle authentication success
+     */
+    handleAuthSuccess(data) {
+        this.logger.info('Authentication successful', { userId: data.user?.telegram_id });
+        this.updateUserDisplay();
+    }
+    
+    /**
+     * Handle authentication failure
+     */
+    handleAuthFailed(data) {
+        this.logger.error('Authentication failed', null, data);
+        this.showError('Authentication failed. Please refresh and try again.');
+    }
+    
+    /**
+     * Handle logout
+     */
+    handleLogout() {
+        this.logger.info('User logged out');
+        window.location.reload();
+    }
+    
+    /**
+     * Handle gift purchased
+     */
+    handleGiftPurchased(data) {
+        this.updateUserDisplay();
+        
+        // Refresh relevant pages
+        if (this.currentPage === 'profile') {
+            this.profileController?.refresh();
+        }
+        
+        if (this.currentPage === 'leaderboard') {
+            this.leaderboardController?.refresh();
+        }
+        
+        this.showToast(`🎉 ${data.giftName} added to your collection!`, 'success');
+        this.platformAdapter.sendHapticFeedback('success');
+    }
+    
+    /**
+     * Handle back navigation
+     */
+    handleBackNavigation() {
+        if (this.currentPage !== 'gifts') {
+            this.navigateToPage('gifts');
+        } else {
+            this.platformAdapter.close();
+        }
+    }
+    
+    /**
+     * Handle main button click
+     */
+    handleMainButtonClick() {
+        const user = this.authService.getCurrentUser();
+        
+        if (!user) {
+            // Authenticate first
+            this.authService.authenticate().then(() => {
+                this.navigateToPage('gifts');
+            }).catch(error => {
+                this.logger.error('Authentication failed on main button click', error);
+                this.showToast('Please login to start collecting gifts', 'error');
+            });
+        } else {
+            // Navigate to gifts page
+            this.navigateToPage('gifts');
+        }
+    }
+    
+    /**
+     * Update user display
+     */
+    updateUserDisplay() {
+        const user = this.authService.getCurrentUser();
+        
+        if (!user) return;
+        
+        const userNameElement = document.getElementById('user-name');
+        const userPointsElement = document.getElementById('user-points');
+        
+        if (userNameElement) {
+            userNameElement.textContent = this.truncateText(user.username || 'User', 15);
+        }
+        
+        if (userPointsElement) {
+            userPointsElement.textContent = `${this.formatPoints(user.points)} pts`;
+        }
+    }
+    
+    /**
+     * Apply theme
+     */
+    applyTheme() {
+        const themeParams = this.platformAdapter.getThemeParams();
         
         if (themeParams) {
             const root = document.documentElement;
             
-            // Apply Telegram theme colors
             Object.keys(themeParams).forEach(key => {
-                root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, themeParams[key]);
+                if (key !== 'colorScheme') {
+                    root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, themeParams[key]);
+                }
             });
-            
-            // Add theme class
-            if (themeParams.bg_color && this.isColorDark(themeParams.bg_color)) {
-                document.body.classList.add('theme-dark');
-            }
         }
     }
     
-    isColorDark(color) {
-        const hex = color.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
-        const brightness = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-        return brightness < 128;
-    }
-    
-    // ======================
-    // User Management
-    // ======================
-    
-    updateUserDisplay() {
-        if (!this.user) return;
-        
-        const userNameElement = Utils.getElementById('user-name');
-        const userPointsElement = Utils.getElementById('user-points');
-        const appModeElement = Utils.getElementById('app-mode');
-        
-        if (userNameElement) {
-            userNameElement.textContent = Utils.truncateText(this.user.username || 'User', 15);
-        }
-        
-        if (userPointsElement) {
-            userPointsElement.textContent = `${Utils.formatPoints(this.user.points)} pts`;
-        }
-        
-        // Hide mode indicator for cleaner UI
-        if (appModeElement) {
-            appModeElement.style.display = 'none';
-        }
-    }
-    
-    async updateUserPoints(change) {
-        if (!this.user) return false;
-        
-        const newPoints = this.user.points + change;
-        
-        if (newPoints < 0 || newPoints > CONFIG.POINTS.MAX_POINTS) {
-            return false;
-        }
-        
-        try {
-            if (this.supabase) {
-                const { error } = await this.supabase
-                    .from(CONFIG.TABLES.USERS)
-                    .update({ points: newPoints })
-                    .eq('telegram_id', this.user.telegram_id);
-                
-                if (error) throw error;
-            }
-            
-            this.user.points = newPoints;
-            
-            // Update localStorage for MVP
-            Utils.setStorage(CONFIG.STORAGE_KEYS.USER_DATA, this.user);
-            
-            this.updateUserDisplay();
-            
-            return true;
-            
-        } catch (error) {
-            Utils.logError(error, 'Update user points');
-            return false;
-        }
-    }
-    
-    // ======================
-    // Event Tracking
-    // ======================
-    
-    trackEvent(eventName, parameters = {}) {
-        if (!CONFIG.FEATURES.ANALYTICS) return;
-        
-        try {
-            // For MVP, just log to console
-            if (CONFIG.DEBUG) {
-                console.log('Event:', eventName, parameters);
-            }
-            
-            // In production, you would send to Google Analytics
-            if (window.gtag && CONFIG.ANALYTICS.GA4_ID) {
-                window.gtag('event', eventName, {
-                    ...parameters,
-                    user_id: this.user?.telegram_id
-                });
-            }
-            
-        } catch (error) {
-            Utils.logError(error, 'Event tracking');
-        }
-    }
-    
-    // ======================
-    // Error Handling
-    // ======================
-    
+    /**
+     * Handle initialization error
+     */
     handleInitializationError(error) {
-        Utils.hideLoading();
+        this.hideLoading();
         
-        let message = CONFIG.MESSAGES.ERRORS.GENERIC;
+        let message = 'Failed to initialize application';
         
-        if (error.message.includes('Telegram')) {
-            message = CONFIG.MESSAGES.ERRORS.AUTH;
-        } else if (error.message.includes('database') || error.message.includes('Supabase')) {
-            message = CONFIG.MESSAGES.ERRORS.NETWORK;
+        if (error.message.includes('auth')) {
+            message = 'Authentication failed. Please ensure you\'re opening this from Telegram.';
+        } else if (error.message.includes('network')) {
+            message = 'Network error. Please check your connection.';
         }
         
-        Utils.showError(message, () => {
+        this.showError(message, () => {
             window.location.reload();
         });
     }
     
-    handleViewportChange() {
-        // Handle Telegram viewport changes if needed
-        if (CONFIG.DEBUG) {
-            console.log('Viewport changed:', window.Telegram.WebApp.viewportHeight);
+    // UI Helper Methods
+    
+    showLoading(message = 'Loading...') {
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.style.display = 'flex';
+            const textElement = loadingElement.querySelector('p');
+            if (textElement) {
+                textElement.textContent = message;
+            }
         }
     }
     
-    // ======================
-    // Public API
-    // ======================
-    
-    getUser() {
-        return this.user;
+    hideLoading() {
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.style.display = 'none';
+        }
     }
     
-    getSupabase() {
-        return this.supabase;
+    showMainApp() {
+        const mainApp = document.getElementById('main-app');
+        if (mainApp) {
+            mainApp.style.display = 'block';
+        }
     }
     
-    isReady() {
-        return this.isInitialized;
+    showError(message, callback) {
+        const errorElement = document.getElementById('error-message');
+        if (errorElement) {
+            errorElement.style.display = 'flex';
+            const textElement = document.getElementById('error-text');
+            if (textElement) {
+                textElement.textContent = message;
+            }
+            
+            const retryButton = document.getElementById('retry-btn');
+            if (retryButton && callback) {
+                retryButton.onclick = callback;
+            }
+        }
+    }
+    
+    showToast(message, type = 'info', duration = 3000) {
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        
+        // Add to body
+        document.body.appendChild(toast);
+        
+        // Animate in
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        // Remove after duration
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, duration);
+    }
+    
+    formatPoints(points) {
+        return new Intl.NumberFormat().format(points || 0);
+    }
+    
+    truncateText(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength - 3) + '...';
     }
 }
 
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.FanZoneApp = new FanZoneApp();
-    window.FanZoneApp.init();
-});
 
-// Export for use in other modules
+// Create and export application instance
+window.FanZoneApp = new FanZoneApplication(window.DIContainer);
+
+// Export for modules
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = FanZoneApp;
+    module.exports = FanZoneApplication;
 }

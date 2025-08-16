@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, shrink-to-fit=no">
     <title>FanZone - Digital Gifts</title>
     
     <!-- Telegram Web App -->
@@ -10,7 +10,6 @@
     
     <!-- Telegram Web App specific meta tags -->
     <meta name="telegram-web-app" content="true">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, shrink-to-fit=no">
     
     <!-- Theme colors for Telegram integration -->
     <meta name="theme-color" content="#3390ec">
@@ -21,46 +20,225 @@
     <!-- Open Graph for sharing -->
     <meta property="og:title" content="FanZone - Digital Gifts for Sports Fans">
     <meta property="og:description" content="Collect exclusive digital gifts from your favorite sports clubs!">
-    <meta property="og:image" content="https://pilot-stuk.github.io/fanzone/og-image.png">
     <meta property="og:type" content="website">
-    
-    <!-- Telegram Web App Script - Load Early -->
-    <script>
-        // Telegram Web App initialization
-        window.addEventListener('DOMContentLoaded', function() {
-            if (window.Telegram && window.Telegram.WebApp) {
-                window.Telegram.WebApp.ready();
-                window.Telegram.WebApp.expand();
-                
-                // Apply Telegram theme immediately
-                const tg = window.Telegram.WebApp;
-                if (tg.themeParams) {
-                    const root = document.documentElement;
-                    Object.keys(tg.themeParams).forEach(key => {
-                        root.style.setProperty(`--tg-theme-${key.replace(/_/g, '-')}`, tg.themeParams[key]);
-                    });
-                    
-                    // Add dark theme class if needed
-                    if (tg.colorScheme === 'dark') {
-                        document.body.classList.add('theme-dark');
-                    }
-                }
-            }
-        });
-    </script>
     
     <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <!-- Local stylesheets -->
     <link rel="stylesheet" href="styles.css">
+    
+    <style>
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            bottom: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            transition: bottom 0.3s ease;
+            max-width: 90%;
+            text-align: center;
+        }
+        
+        .toast.show {
+            bottom: 80px;
+        }
+        
+        .toast-success {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .toast-error {
+            background: #F44336;
+            color: white;
+        }
+        
+        .toast-warning {
+            background: #FF9800;
+            color: white;
+        }
+        
+        .toast-info {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, white);
+        }
+        
+        /* Loading improvements */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--tg-theme-bg-color, #fff);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--tg-theme-hint-color, #ccc);
+            border-top: 4px solid var(--tg-theme-button-color, #3390ec);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Error overlay improvements */
+        .error-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9998;
+        }
+        
+        .error-content {
+            background: var(--tg-theme-bg-color, white);
+            padding: 20px;
+            border-radius: 12px;
+            max-width: 90%;
+            text-align: center;
+        }
+        
+        .error-content h3 {
+            color: #F44336;
+            margin-bottom: 10px;
+        }
+        
+        .error-content p {
+            color: var(--tg-theme-text-color, #333);
+            margin-bottom: 20px;
+        }
+        
+        /* Main app improvements */
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: var(--tg-theme-bg-color, #f5f5f5);
+        }
+        
+        .app-header {
+            background: var(--tg-theme-bg-color, white);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .app-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--tg-theme-text-color, #000);
+            margin: 0;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .points-badge {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, white);
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .page-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 60px;
+        }
+        
+        .page {
+            display: none;
+            padding: 16px;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--tg-theme-bg-color, white);
+            border-top: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            display: flex;
+            justify-content: space-around;
+            padding: 8px 0;
+            z-index: 100;
+        }
+        
+        .nav-btn {
+            background: none;
+            border: none;
+            padding: 8px 16px;
+            color: var(--tg-theme-hint-color, #999);
+            font-size: 14px;
+            cursor: pointer;
+            transition: color 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .nav-btn.active {
+            color: var(--tg-theme-button-color, #3390ec);
+        }
+        
+        /* Responsive improvements */
+        @media (max-width: 480px) {
+            .app-header h1 {
+                font-size: 18px;
+            }
+            
+            .user-info {
+                font-size: 12px;
+            }
+            
+            .points-badge {
+                font-size: 12px;
+                padding: 3px 6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div id="app">
         <!-- Loading Screen -->
         <div id="loading" class="loading-screen">
             <div class="loading-spinner"></div>
-            <p>Loading FanZone...</p>
+            <p>Initializing FanZone...</p>
         </div>
 
         <!-- Main App Container -->
@@ -71,20 +249,22 @@
                 <div class="user-info">
                     <span id="user-name">Loading...</span>
                     <span id="user-points" class="points-badge">0 pts</span>
-                    <span id="app-mode" class="mode-badge" style="display: none;"></span>
                 </div>
             </header>
 
             <!-- Navigation -->
             <nav class="bottom-nav">
                 <button class="nav-btn active" data-page="gifts">
-                    🎁 Gifts
+                    <span>🎁</span>
+                    <span>Gifts</span>
                 </button>
                 <button class="nav-btn" data-page="leaderboard">
-                    🏆 Ranking
+                    <span>🏆</span>
+                    <span>Ranking</span>
                 </button>
                 <button class="nav-btn" data-page="profile">
-                    👤 Profile
+                    <span>👤</span>
+                    <span>Profile</span>
                 </button>
             </nav>
 
@@ -98,10 +278,6 @@
                     </div>
                     <div id="gifts-container" class="gifts-grid">
                         <!-- Gifts will be loaded here -->
-                        <div class="welcome-message">
-                            <h3>Welcome to FanZone! 🎉</h3>
-                            <p>You start with <strong>100 points</strong>. Use them to collect amazing digital gifts!</p>
-                        </div>
                     </div>
                 </div>
 
@@ -132,29 +308,63 @@
         <!-- Error Message -->
         <div id="error-message" class="error-overlay" style="display: none;">
             <div class="error-content">
-                <h3>Oops! Something went wrong</h3>
-                <p id="error-text"></p>
+                <h3>⚠️ Oops!</h3>
+                <p id="error-text">Something went wrong</p>
                 <button id="retry-btn" class="btn btn-primary">Try Again</button>
             </div>
         </div>
     </div>
 
-    <!-- Load all JavaScript modules -->
+    <!-- Load configuration first -->
     <script src="config.js"></script>
     <script src="utils.js"></script>
-    <script src="theme.js"></script>
-    <script src="auth.js"></script>
-    <script src="database/realtime-config.js"></script>
-    <script src="app.js"></script>
-    <script src="gifts.js"></script>
-    <script src="leaderboard.js"></script>
-    <script src="profile.js"></script>
     
-    <!-- Testing scripts (development mode only) -->
-    <script src="database/test-operations.js"></script>
-    <script src="leaderboard-test.js"></script>
-    <script src="gifts-test.js"></script>
-    <script src="profile-test.js"></script>
-    <script src="mobile-theme-test.js"></script>
+    <!-- Load core modules -->
+    <script src="src/core/interfaces.js"></script>
+    <script src="src/core/EventBus.js"></script>
+    <script src="src/core/Logger.js"></script>
+    <script src="src/core/DIContainer.js"></script>
+    
+    <!-- Load adapters -->
+    <script src="src/adapters/TelegramAdapter.js"></script>
+    
+    <!-- Load repositories -->
+    <script src="src/repositories/SupabaseRepository.js"></script>
+    
+    <!-- Load services -->
+    <script src="src/services/AuthService.js"></script>
+    <script src="src/services/UserService.js"></script>
+    <script src="src/services/GiftService.js"></script>
+    
+    <!-- Load controllers -->
+    <script src="src/controllers/GiftsController.js"></script>
+    <script src="src/controllers/LeaderboardController.js"></script>
+    <script src="src/controllers/ProfileController.js"></script>
+    
+    <!-- Load main application -->
+    <script src="app.js"></script>
+    
+    <!-- Initialize application -->
+    <script>
+        // Wait for DOM to be ready
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Initialize the application
+                await window.FanZoneApp.initialize();
+            } catch (error) {
+                console.error('Failed to initialize application:', error);
+                
+                // Show error to user
+                const errorElement = document.getElementById('error-message');
+                if (errorElement) {
+                    errorElement.style.display = 'flex';
+                    const errorText = document.getElementById('error-text');
+                    if (errorText) {
+                        errorText.textContent = 'Failed to initialize. Please refresh and try again.';
+                    }
+                }
+            }
+        });
+    </script>
 </body>
 </html>
