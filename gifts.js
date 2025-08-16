@@ -4,14 +4,27 @@
 class GiftsManager {
     constructor() {
         this.gifts = [];
+        this.filteredGifts = [];
         this.userGifts = [];
         this.isLoading = false;
+        this.isPurchasing = false;
+        this.currentFilter = 'all';
+        this.searchQuery = '';
+        this.subscription = null;
+        
+        // Performance optimizations
+        this.renderDebounceTime = 100;
+        this.lastRenderTime = 0;
         
         // Bind methods
         this.init = this.init.bind(this);
         this.loadGifts = this.loadGifts.bind(this);
         this.renderGifts = this.renderGifts.bind(this);
         this.purchaseGift = this.purchaseGift.bind(this);
+        this.filterGifts = this.filterGifts.bind(this);
+        this.searchGifts = this.searchGifts.bind(this);
+        this.handleInventoryUpdate = this.handleInventoryUpdate.bind(this);
+        this.showPurchaseConfirmation = this.showPurchaseConfirmation.bind(this);
     }
     
     // ======================
@@ -20,9 +33,20 @@ class GiftsManager {
     
     async init() {
         try {
+            this.showLoadingState();
             await this.loadGifts();
+            this.setupFilteringAndSearch();
+            this.filterGifts();
             this.renderGifts();
             this.setupEventListeners();
+            this.setupRealTimeUpdates();
+            
+            // Track gifts view
+            window.FanZoneApp?.trackEvent('gifts_view', {
+                total_gifts: this.gifts.length,
+                available_gifts: this.gifts.filter(g => g.current_supply < g.max_supply).length
+            });
+            
         } catch (error) {
             Utils.logError(error, 'Gifts initialization');
             this.showError('Failed to load gifts');
@@ -30,7 +54,7 @@ class GiftsManager {
     }
     
     setupEventListeners() {
-        // Gift purchase clicks will be added dynamically
+        // Gift purchase clicks
         const container = Utils.getElementById('gifts-container');
         if (container) {
             container.addEventListener('click', (e) => {
@@ -39,6 +63,74 @@ class GiftsManager {
                     this.handleGiftClick(giftCard.dataset.giftId);
                 }
             });
+        }
+        
+        // Filter buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('[data-filter]')) {
+                const filter = e.target.closest('[data-filter]').dataset.filter;
+                this.setFilter(filter);
+            }
+        });
+        
+        // Search input
+        const searchInput = document.getElementById('gift-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', Utils.debounce((e) => {
+                this.searchGifts(e.target.value);
+            }, 300));
+        }
+    }
+
+    setupFilteringAndSearch() {
+        const container = Utils.getElementById('gifts-container');
+        if (!container) return;
+        
+        // Create filtering and search UI
+        const filterHTML = `
+            <div class="gifts-controls">
+                <div class="search-section">
+                    <div class="search-input-container">
+                        <input type="text" id="gift-search" placeholder="🔍 Search gifts..." />
+                        <button id="clear-search" style="display: none;">✕</button>
+                    </div>
+                </div>
+                
+                <div class="filter-section">
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="match">⚽ Match</button>
+                        <button class="filter-btn" data-filter="trophy">🏆 Trophy</button>
+                        <button class="filter-btn" data-filter="player">👕 Player</button>
+                        <button class="filter-btn" data-filter="special">⭐ Special</button>
+                    </div>
+                </div>
+                
+                <div class="gifts-stats">
+                    <span id="gifts-count">Loading...</span>
+                </div>
+            </div>
+            
+            <div class="gifts-grid" id="gifts-grid">
+                <!-- Gifts will be rendered here -->
+            </div>
+        `;
+        
+        container.innerHTML = filterHTML;
+    }
+
+    setupRealTimeUpdates() {
+        if (window.FanZoneRealtime?.isReady()) {
+            const realtimeManager = window.FanZoneRealtime.getManager();
+            
+            // Subscribe to gift inventory updates
+            realtimeManager.subscribeToGiftInventory((data) => {
+                this.handleInventoryUpdate(data);
+            });
+            
+            if (CONFIG.DEBUG) {
+                console.log('🎁 Real-time gift updates enabled');
+            }
         }
     }
     
@@ -50,23 +142,26 @@ class GiftsManager {
         if (this.isLoading) return;
         this.isLoading = true;
         
+        const startTime = performance.now();
+        
         try {
             const app = window.FanZoneApp;
             const supabase = app?.getSupabase();
             
             if (supabase) {
-                // Load from Supabase
+                // Load from Supabase with optimized query
                 const { data: gifts, error } = await supabase
                     .from(CONFIG.TABLES.GIFTS)
                     .select('*')
                     .eq('is_active', true)
+                    .order('sort_order', { ascending: true })
                     .order('created_at', { ascending: false });
                 
                 if (error) throw error;
                 
                 this.gifts = gifts || [];
                 
-                // Load user's gifts
+                // Load user's gifts efficiently
                 const user = app.getUser();
                 if (user) {
                     const { data: userGifts, error: userGiftsError } = await supabase
@@ -76,10 +171,17 @@ class GiftsManager {
                     
                     if (userGiftsError) {
                         Utils.logError(userGiftsError, 'Load user gifts');
+                        this.userGifts = [];
                     } else {
                         this.userGifts = userGifts?.map(ug => ug.gift_id) || [];
                     }
                 }
+                
+                if (CONFIG.DEBUG) {
+                    const loadTime = performance.now() - startTime;
+                    console.log(`🎁 Gifts loaded in ${loadTime.toFixed(2)}ms (${this.gifts.length} gifts, ${this.userGifts.length} owned)`);
+                }
+                
             } else {
                 // MVP mode - use sample gifts
                 this.gifts = this.getSampleGifts();
@@ -91,6 +193,96 @@ class GiftsManager {
             throw error;
         } finally {
             this.isLoading = false;
+        }
+    }
+
+    // ======================
+    // Filtering and Search
+    // ======================
+
+    filterGifts() {
+        let filtered = [...this.gifts];
+        
+        // Apply category filter
+        if (this.currentFilter !== 'all') {
+            filtered = filtered.filter(gift => gift.category === this.currentFilter);
+        }
+        
+        // Apply search filter
+        if (this.searchQuery) {
+            const query = this.searchQuery.toLowerCase();
+            filtered = filtered.filter(gift => 
+                gift.name.toLowerCase().includes(query) ||
+                gift.description.toLowerCase().includes(query) ||
+                gift.category.toLowerCase().includes(query)
+            );
+        }
+        
+        // Sort by availability and then by price
+        filtered.sort((a, b) => {
+            const aAvailable = a.current_supply < a.max_supply;
+            const bAvailable = b.current_supply < b.max_supply;
+            
+            if (aAvailable !== bAvailable) {
+                return bAvailable ? 1 : -1; // Available first
+            }
+            
+            return a.price_points - b.price_points; // Cheaper first
+        });
+        
+        this.filteredGifts = filtered;
+        this.updateGiftsStats();
+    }
+
+    setFilter(filter) {
+        this.currentFilter = filter;
+        
+        // Update filter buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-filter="${filter}"]`)?.classList.add('active');
+        
+        this.filterGifts();
+        this.renderGifts();
+        
+        // Track filter usage
+        window.FanZoneApp?.trackEvent('gifts_filter', { filter });
+    }
+
+    searchGifts(query) {
+        this.searchQuery = query.trim();
+        
+        // Update clear button visibility
+        const clearButton = document.getElementById('clear-search');
+        if (clearButton) {
+            clearButton.style.display = this.searchQuery ? 'block' : 'none';
+        }
+        
+        this.filterGifts();
+        this.renderGifts();
+        
+        // Track search usage
+        if (this.searchQuery) {
+            window.FanZoneApp?.trackEvent('gifts_search', { 
+                query: this.searchQuery,
+                results: this.filteredGifts.length 
+            });
+        }
+    }
+
+    updateGiftsStats() {
+        const statsElement = document.getElementById('gifts-count');
+        if (statsElement) {
+            const total = this.gifts.length;
+            const filtered = this.filteredGifts.length;
+            const available = this.filteredGifts.filter(g => g.current_supply < g.max_supply).length;
+            
+            if (this.currentFilter === 'all' && !this.searchQuery) {
+                statsElement.textContent = `${total} gifts • ${available} available`;
+            } else {
+                statsElement.textContent = `${filtered} of ${total} gifts • ${available} available`;
+            }
         }
     }
     
@@ -159,21 +351,90 @@ class GiftsManager {
     // ======================
     
     renderGifts() {
-        const container = Utils.getElementById('gifts-container');
-        if (!container) return;
+        const gridContainer = Utils.getElementById('gifts-grid');
+        if (!gridContainer) return;
         
-        if (this.gifts.length === 0) {
-            container.innerHTML = `
-                <div class="welcome-message">
-                    <h3>No gifts available yet</h3>
-                    <p>Check back soon for new digital gifts!</p>
-                </div>
-            `;
+        // Debounce rendering for performance
+        const now = performance.now();
+        if (now - this.lastRenderTime < this.renderDebounceTime) {
+            setTimeout(() => this.renderGifts(), this.renderDebounceTime);
+            return;
+        }
+        this.lastRenderTime = now;
+        
+        if (this.isLoading) {
+            gridContainer.innerHTML = this.renderLoadingState();
             return;
         }
         
-        // Clear welcome message and render gifts
-        container.innerHTML = this.gifts.map(gift => this.renderGiftCard(gift)).join('');
+        if (this.filteredGifts.length === 0) {
+            gridContainer.innerHTML = this.renderEmptyState();
+            return;
+        }
+        
+        // Render filtered gifts
+        gridContainer.innerHTML = this.filteredGifts.map(gift => this.renderGiftCard(gift)).join('');
+        
+        // Add fade-in animation
+        gridContainer.classList.add('fade-in');
+        setTimeout(() => gridContainer.classList.remove('fade-in'), 300);
+    }
+
+    renderLoadingState() {
+        return `
+            <div class="loading-state">
+                <div class="loading-spinner"></div>
+                <p>Loading amazing gifts...</p>
+            </div>
+        `;
+    }
+
+    renderEmptyState() {
+        if (this.searchQuery) {
+            return `
+                <div class="empty-state">
+                    <h3>🔍 No gifts found</h3>
+                    <p>No gifts match "${this.searchQuery}". Try a different search term.</p>
+                    <button class="btn btn-secondary" onclick="document.getElementById('gift-search').value=''; window.GiftsManager.searchGifts('')">
+                        Clear Search
+                    </button>
+                </div>
+            `;
+        }
+        
+        if (this.currentFilter !== 'all') {
+            return `
+                <div class="empty-state">
+                    <h3>🎁 No ${this.currentFilter} gifts</h3>
+                    <p>No gifts in this category yet. Try browsing all gifts!</p>
+                    <button class="btn btn-secondary" onclick="window.GiftsManager.setFilter('all')">
+                        View All Gifts
+                    </button>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="empty-state">
+                <h3>🎁 No gifts available yet</h3>
+                <p>Check back soon for new digital gifts!</p>
+                <button class="btn btn-primary" onclick="window.GiftsManager.loadGifts().then(() => window.GiftsManager.renderGifts())">
+                    Refresh
+                </button>
+            </div>
+        `;
+    }
+
+    showLoadingState() {
+        const container = Utils.getElementById('gifts-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>Loading gifts...</p>
+                </div>
+            `;
+        }
     }
     
     renderGiftCard(gift) {
@@ -182,22 +443,38 @@ class GiftsManager {
         const user = window.FanZoneApp?.getUser();
         const canAfford = user && user.points >= gift.price_points;
         
+        const supplyPercentage = (gift.current_supply / gift.max_supply) * 100;
+        const rarityClass = this.getRarityClass(gift);
         const statusClass = isOwned ? 'owned' : isOutOfStock ? 'out-of-stock' : !canAfford ? 'insufficient-points' : '';
         
         return `
-            <div class="gift-card ${statusClass}" data-gift-id="${gift.id}">
+            <div class="gift-card ${statusClass} ${rarityClass}" data-gift-id="${gift.id}">
                 <div class="gift-image">
                     <img src="${gift.image_url}" alt="${gift.name}" loading="lazy" />
                     ${isOwned ? '<div class="owned-badge">✓ Owned</div>' : ''}
+                    ${supplyPercentage > 90 ? '<div class="low-stock-badge">⚡ Low Stock</div>' : ''}
+                    ${gift.rarity ? `<div class="rarity-badge rarity-${gift.rarity}">${this.getRarityIcon(gift.rarity)}</div>` : ''}
                 </div>
                 
                 <div class="gift-info">
-                    <h3>${gift.name}</h3>
-                    <p>${Utils.truncateText(gift.description, 40)}</p>
+                    <div class="gift-header">
+                        <h3>${gift.name}</h3>
+                        <div class="category-badge">${this.getCategoryIcon(gift.category)}</div>
+                    </div>
                     
-                    <div class="gift-price">
-                        <span class="price-tag">${Utils.formatPoints(gift.price_points)} pts</span>
-                        <span class="supply-info">${gift.current_supply}/${gift.max_supply}</span>
+                    <p class="gift-description">${Utils.truncateText(gift.description, 60)}</p>
+                    
+                    <div class="gift-stats">
+                        <div class="gift-price">
+                            <span class="price-tag">${Utils.formatPoints(gift.price_points)} pts</span>
+                        </div>
+                        
+                        <div class="supply-section">
+                            <div class="supply-bar">
+                                <div class="supply-fill" style="width: ${supplyPercentage}%"></div>
+                            </div>
+                            <span class="supply-text">${gift.current_supply}/${gift.max_supply}</span>
+                        </div>
                     </div>
                     
                     <div class="gift-actions">
@@ -207,21 +484,58 @@ class GiftsManager {
             </div>
         `;
     }
+
+    getRarityClass(gift) {
+        if (gift.rarity) {
+            return `rarity-${gift.rarity}`;
+        }
+        
+        // Fallback based on price
+        if (gift.price_points >= 150) return 'rarity-legendary';
+        if (gift.price_points >= 100) return 'rarity-epic';
+        if (gift.price_points >= 50) return 'rarity-rare';
+        return 'rarity-common';
+    }
+
+    getRarityIcon(rarity) {
+        const icons = {
+            'common': '⚪',
+            'rare': '🔵',
+            'epic': '🟣',
+            'legendary': '🟡'
+        };
+        return icons[rarity] || '⚪';
+    }
+
+    getCategoryIcon(category) {
+        const icons = {
+            'match': '⚽',
+            'trophy': '🏆',
+            'player': '👕',
+            'special': '⭐',
+            'general': '🎁'
+        };
+        return icons[category] || '🎁';
+    }
     
     renderGiftButton(gift, isOwned, isOutOfStock, canAfford) {
         if (isOwned) {
-            return '<button class="btn btn-secondary" disabled>Already Owned</button>';
+            return '<button class="btn btn-success" disabled><span class="btn-icon">✓</span> Owned</button>';
         }
         
         if (isOutOfStock) {
-            return '<button class="btn btn-secondary" disabled>Out of Stock</button>';
+            return '<button class="btn btn-secondary" disabled><span class="btn-icon">❌</span> Out of Stock</button>';
         }
         
         if (!canAfford) {
-            return '<button class="btn btn-secondary" disabled>Not Enough Points</button>';
+            const user = window.FanZoneApp?.getUser();
+            const needed = gift.price_points - (user?.points || 0);
+            return `<button class="btn btn-secondary" disabled><span class="btn-icon">💰</span> Need ${needed} more pts</button>`;
         }
         
-        return `<button class="btn btn-primary" onclick="window.GiftsManager.purchaseGift('${gift.id}')">Collect Gift</button>`;
+        return `<button class="btn btn-primary" onclick="window.GiftsManager.showPurchaseConfirmation('${gift.id}')">
+            <span class="btn-icon">🎁</span> Collect Gift
+        </button>`;
     }
     
     // ======================
@@ -232,7 +546,7 @@ class GiftsManager {
         const gift = this.gifts.find(g => g.id === giftId);
         if (!gift) return;
         
-        // Show gift details modal (simplified for MVP)
+        // Show gift details
         this.showGiftDetails(gift);
         Utils.hapticFeedback('light');
     }
@@ -243,25 +557,57 @@ class GiftsManager {
         const user = window.FanZoneApp?.getUser();
         const canAfford = user && user.points >= gift.price_points;
         
-        // For MVP, use a simple alert (in production, you'd use a proper modal)
-        const message = `
-${gift.name}
+        const supplyPercentage = (gift.current_supply / gift.max_supply) * 100;
+        const rarityText = gift.rarity ? ` • ${gift.rarity.charAt(0).toUpperCase() + gift.rarity.slice(1)}` : '';
+        
+        const message = `🎁 ${gift.name}${rarityText}
 
 ${gift.description}
 
-Price: ${Utils.formatPoints(gift.price_points)} points
-Supply: ${gift.current_supply}/${gift.max_supply}
+💰 Price: ${Utils.formatPoints(gift.price_points)} points
+📦 Supply: ${gift.current_supply}/${gift.max_supply} (${Math.round(100-supplyPercentage)}% available)
+🏷️ Category: ${gift.category}
 
-${isOwned ? '✓ You own this gift!' : 
-  isOutOfStock ? '❌ Out of stock' :
-  !canAfford ? '💰 Not enough points' :
-  '🎁 Click "Collect Gift" to purchase'}
-        `;
+${isOwned ? '✅ You already own this gift!' : 
+  isOutOfStock ? '❌ This gift is out of stock' :
+  !canAfford ? `💸 You need ${gift.price_points - user.points} more points` :
+  '🎁 Tap "Collect Gift" to add this to your collection!'}`;
         
-        alert(message.trim());
+        // Show toast instead of alert for better UX
+        Utils.showToast(message, 'info', 5000);
+    }
+
+    showPurchaseConfirmation(giftId) {
+        const gift = this.gifts.find(g => g.id === giftId);
+        if (!gift) return;
+        
+        const user = window.FanZoneApp?.getUser();
+        if (!user) return;
+        
+        const remainingPoints = user.points - gift.price_points;
+        
+        const confirmMessage = `🎁 Confirm Purchase
+
+${gift.name}
+💰 Cost: ${Utils.formatPoints(gift.price_points)} points
+
+After purchase:
+💳 Your points: ${Utils.formatPoints(remainingPoints)} pts
+🎁 This gift will be added to your collection
+
+Are you sure you want to collect this gift?`;
+        
+        if (confirm(confirmMessage)) {
+            this.purchaseGift(giftId);
+        }
     }
     
     async purchaseGift(giftId) {
+        if (this.isPurchasing) {
+            Utils.showToast('Please wait, processing another purchase...', 'warning');
+            return;
+        }
+        
         const gift = this.gifts.find(g => g.id === giftId);
         if (!gift) {
             Utils.showToast('Gift not found', 'error');
@@ -274,56 +620,134 @@ ${isOwned ? '✓ You own this gift!' :
             return;
         }
         
-        // Validation checks
-        if (this.userGifts.includes(giftId)) {
-            Utils.showToast('You already own this gift!', 'warning');
+        // Comprehensive validation checks
+        const validationResult = this.validatePurchase(gift, user);
+        if (!validationResult.valid) {
+            Utils.showToast(validationResult.message, validationResult.type);
             return;
         }
         
-        if (gift.current_supply >= gift.max_supply) {
-            Utils.showToast(CONFIG.MESSAGES.ERRORS.OUT_OF_STOCK, 'error');
-            return;
-        }
-        
-        if (user.points < gift.price_points) {
-            Utils.showToast(CONFIG.MESSAGES.ERRORS.INSUFFICIENT_POINTS, 'error');
-            return;
-        }
+        this.isPurchasing = true;
         
         try {
-            // Show loading state
-            const button = document.querySelector(`[data-gift-id="${giftId}"] .btn-primary`);
-            if (button) {
-                button.disabled = true;
-                button.textContent = 'Processing...';
+            // Show loading state with better UX
+            this.setGiftButtonLoading(giftId, true);
+            
+            Utils.showToast('Processing your purchase...', 'info');
+            
+            // Process purchase with retry logic
+            const result = await this.processPurchaseWithRetry(giftId, gift);
+            
+            if (result.success) {
+                // Update local state immediately for better UX
+                this.userGifts.push(giftId);
+                gift.current_supply += 1;
+                
+                // Update user points locally
+                user.points -= gift.price_points;
+                
+                // Refresh UI
+                this.filterGifts();
+                this.renderGifts();
+                
+                Utils.showToast(`🎉 ${gift.name} added to your collection!`, 'success');
+                Utils.hapticFeedback('success');
+                
+                // Track successful purchase
+                window.FanZoneApp?.trackEvent('gift_purchase_success', {
+                    gift_id: giftId,
+                    gift_name: gift.name,
+                    price: gift.price_points,
+                    remaining_points: user.points
+                });
+                
+                // Reload data from server to ensure consistency
+                setTimeout(() => {
+                    this.loadGifts().then(() => this.renderGifts());
+                }, 1000);
+                
+            } else {
+                throw new Error(result.message || 'Purchase failed');
             }
-            
-            // Process purchase
-            await this.processPurchase(giftId, gift);
-            
-            // Update UI
-            await this.loadGifts();
-            this.renderGifts();
-            
-            Utils.showToast(CONFIG.MESSAGES.SUCCESS.GIFT_PURCHASED, 'success');
-            Utils.hapticFeedback('success');
-            
-            // Track purchase
-            window.FanZoneApp?.trackEvent('gift_purchase', {
-                gift_id: giftId,
-                gift_name: gift.name,
-                price: gift.price_points
-            });
             
         } catch (error) {
             Utils.logError(error, 'Gift purchase');
-            Utils.showToast('Purchase failed. Please try again.', 'error');
             
-            // Reset button
-            const button = document.querySelector(`[data-gift-id="${giftId}"] .btn-primary`);
-            if (button) {
+            let errorMessage = 'Purchase failed. Please try again.';
+            
+            if (error.message.includes('INSUFFICIENT_POINTS')) {
+                errorMessage = 'Not enough points for this purchase.';
+            } else if (error.message.includes('OUT_OF_STOCK')) {
+                errorMessage = 'This gift is now out of stock.';
+            } else if (error.message.includes('ALREADY_OWNED')) {
+                errorMessage = 'You already own this gift.';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Network error. Check your connection and try again.';
+            }
+            
+            Utils.showToast(errorMessage, 'error');
+            
+            // Track failed purchase
+            window.FanZoneApp?.trackEvent('gift_purchase_failed', {
+                gift_id: giftId,
+                gift_name: gift.name,
+                error: error.message
+            });
+            
+        } finally {
+            this.isPurchasing = false;
+            this.setGiftButtonLoading(giftId, false);
+        }
+    }
+
+    validatePurchase(gift, user) {
+        if (this.userGifts.includes(gift.id)) {
+            return { valid: false, message: 'You already own this gift!', type: 'warning' };
+        }
+        
+        if (gift.current_supply >= gift.max_supply) {
+            return { valid: false, message: 'This gift is out of stock!', type: 'error' };
+        }
+        
+        if (user.points < gift.price_points) {
+            const needed = gift.price_points - user.points;
+            return { valid: false, message: `You need ${needed} more points to buy this gift`, type: 'warning' };
+        }
+        
+        return { valid: true };
+    }
+
+    setGiftButtonLoading(giftId, isLoading) {
+        const button = document.querySelector(`[data-gift-id="${giftId}"] .btn-primary`);
+        if (button) {
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = '<span class="btn-icon">⏳</span> Processing...';
+                button.classList.add('loading');
+            } else {
                 button.disabled = false;
-                button.textContent = 'Collect Gift';
+                button.innerHTML = '<span class="btn-icon">🎁</span> Collect Gift';
+                button.classList.remove('loading');
+            }
+        }
+    }
+
+    async processPurchaseWithRetry(giftId, gift, maxRetries = 2) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const result = await this.processPurchase(giftId, gift);
+                return { success: true, result };
+            } catch (error) {
+                if (attempt === maxRetries) {
+                    throw error;
+                }
+                
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                
+                if (CONFIG.DEBUG) {
+                    console.log(`🔄 Retrying purchase attempt ${attempt + 1}/${maxRetries}`);
+                }
             }
         }
     }
@@ -334,14 +758,28 @@ ${isOwned ? '✓ You own this gift!' :
         const user = app?.getUser();
         
         if (supabase && user) {
-            // Database transaction
-            const { error: purchaseError } = await supabase.rpc('purchase_gift', {
-                p_user_id: user.id,
-                p_gift_id: giftId,
-                p_price: gift.price_points
+            // Use the enhanced purchase function from database
+            const { data: result, error: purchaseError } = await supabase.rpc('purchase_gift', {
+                p_user_telegram_id: user.telegram_id,
+                p_gift_id: giftId
             });
             
-            if (purchaseError) throw purchaseError;
+            if (purchaseError) {
+                throw new Error(`Database error: ${purchaseError.message}`);
+            }
+            
+            if (!result || !result.success) {
+                throw new Error(result?.message || 'Purchase failed');
+            }
+            
+            // Update local user data
+            user.points = result.remaining_points || (user.points - gift.price_points);
+            user.total_gifts = (user.total_gifts || 0) + 1;
+            
+            // Update the app's user data
+            Utils.setStorage(CONFIG.STORAGE_KEYS.USER_DATA, user);
+            
+            return result;
             
         } else {
             // MVP mode - update localStorage
@@ -357,6 +795,50 @@ ${isOwned ? '✓ You own this gift!' :
             // Update gift supply (mock)
             gift.current_supply += 1;
             Utils.setStorage('gifts_data', this.gifts);
+            
+            return { success: true, gift_name: gift.name, price_paid: gift.price_points };
+        }
+    }
+
+    // ======================
+    // Real-time Updates
+    // ======================
+
+    handleInventoryUpdate(data) {
+        if (!data || !data.gift) return;
+        
+        try {
+            const giftId = data.gift.id;
+            const giftIndex = this.gifts.findIndex(g => g.id === giftId);
+            
+            if (giftIndex !== -1) {
+                // Update gift data
+                this.gifts[giftIndex] = { ...this.gifts[giftIndex], ...data.gift };
+                
+                // Re-filter and render if this gift is visible
+                const isVisible = this.filteredGifts.some(g => g.id === giftId);
+                if (isVisible) {
+                    this.filterGifts();
+                    this.renderGifts();
+                }
+                
+                // Show notification if stock is running low
+                const gift = this.gifts[giftIndex];
+                const supplyPercentage = (gift.current_supply / gift.max_supply) * 100;
+                
+                if (supplyPercentage >= 90 && supplyPercentage < 100) {
+                    Utils.showToast(`⚡ ${gift.name} is running low! Only ${gift.max_supply - gift.current_supply} left`, 'warning');
+                } else if (supplyPercentage >= 100) {
+                    Utils.showToast(`❌ ${gift.name} is now out of stock!`, 'error');
+                }
+                
+                if (CONFIG.DEBUG) {
+                    console.log('📦 Gift inventory updated:', data);
+                }
+            }
+            
+        } catch (error) {
+            Utils.logError(error, 'Handle inventory update');
         }
     }
     
@@ -369,13 +851,30 @@ ${isOwned ? '✓ You own this gift!' :
         if (container) {
             container.innerHTML = `
                 <div class="error-state">
-                    <h3>Error Loading Gifts</h3>
+                    <h3>⚠️ Error Loading Gifts</h3>
                     <p>${message}</p>
-                    <button class="btn btn-primary" onclick="window.GiftsManager.init()">
-                        Try Again
-                    </button>
+                    <div class="error-actions">
+                        <button class="btn btn-primary" onclick="window.GiftsManager.init()">
+                            🔄 Try Again
+                        </button>
+                        <button class="btn btn-secondary" onclick="window.GiftsManager.loadSampleData()">
+                            📋 Use Sample Data
+                        </button>
+                    </div>
                 </div>
             `;
+        }
+    }
+    
+    async loadSampleData() {
+        try {
+            this.gifts = this.getSampleGifts();
+            this.userGifts = [];
+            this.filterGifts();
+            this.renderGifts();
+            Utils.showToast('Sample gifts loaded for testing', 'info');
+        } catch (error) {
+            Utils.logError(error, 'Load sample data');
         }
     }
     
@@ -387,13 +886,62 @@ ${isOwned ? '✓ You own this gift!' :
         return this.gifts;
     }
     
-    refresh() {
-        this.init();
+    getFilteredGifts() {
+        return this.filteredGifts;
+    }
+    
+    async refresh() {
+        try {
+            this.showLoadingState();
+            await this.loadGifts();
+            this.filterGifts();
+            this.renderGifts();
+            
+            if (CONFIG.DEBUG) {
+                console.log('🎁 Gifts refreshed successfully');
+            }
+        } catch (error) {
+            Utils.logError(error, 'Refresh gifts');
+            this.showError('Failed to refresh gifts');
+        }
+    }
+    
+    // Get gift statistics for analytics
+    getGiftsStats() {
+        return {
+            total_gifts: this.gifts.length,
+            owned_gifts: this.userGifts.length,
+            available_gifts: this.gifts.filter(g => g.current_supply < g.max_supply).length,
+            out_of_stock: this.gifts.filter(g => g.current_supply >= g.max_supply).length,
+            current_filter: this.currentFilter,
+            search_query: this.searchQuery,
+            filtered_count: this.filteredGifts.length
+        };
+    }
+    
+    // Cleanup method
+    destroy() {
+        if (this.subscription) {
+            this.subscription.unsubscribe();
+            this.subscription = null;
+        }
+        
+        // Clear any pending purchase
+        this.isPurchasing = false;
+        
+        if (CONFIG.DEBUG) {
+            console.log('🎁 GiftsManager destroyed');
+        }
     }
 }
 
 // Create global instance
 window.GiftsManager = new GiftsManager();
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    window.GiftsManager.destroy();
+});
 
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {

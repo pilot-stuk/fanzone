@@ -7,12 +7,20 @@ class ProfileManager {
         this.userGifts = [];
         this.purchaseHistory = [];
         this.isLoading = false;
+        this.currentFilter = 'all';
+        
+        // Performance optimizations
+        this.observer = null;
+        this.visibleGifts = new Set();
+        this.renderDebounceTime = 150;
         
         // Bind methods
         this.init = this.init.bind(this);
         this.loadUserData = this.loadUserData.bind(this);
         this.renderProfile = this.renderProfile.bind(this);
         this.renderCollection = this.renderCollection.bind(this);
+        this.setupLazyLoading = this.setupLazyLoading.bind(this);
+        this.handleImageLoad = this.handleImageLoad.bind(this);
     }
     
     // ======================
@@ -21,12 +29,17 @@ class ProfileManager {
     
     async init() {
         try {
+            this.showLoadingState();
             await this.loadUserData();
             this.renderProfile();
             this.setupEventListeners();
+            this.setupLazyLoading();
             
             // Track profile view
-            window.FanZoneApp?.trackEvent('profile_view');
+            window.FanZoneApp?.trackEvent('profile_view', {
+                total_gifts: this.userGifts.length,
+                total_spent: this.getTotalSpent()
+            });
             
         } catch (error) {
             Utils.logError(error, 'Profile initialization');
@@ -46,8 +59,22 @@ class ProfileManager {
                 if (e.target.classList.contains('share-btn')) {
                     this.shareGift(e.target.dataset.giftId);
                 }
+                
+                if (e.target.classList.contains('filter-btn')) {
+                    this.setCollectionFilter(e.target.dataset.filter);
+                }
+                
+                if (e.target.closest('.collection-item')) {
+                    const giftId = e.target.closest('.collection-item').dataset.giftId;
+                    this.showGiftDetails(giftId);
+                }
             });
         }
+        
+        // Window resize for responsive handling
+        window.addEventListener('resize', Utils.debounce(() => {
+            this.handleResize();
+        }, 250));
     }
     
     // ======================
@@ -215,9 +242,34 @@ class ProfileManager {
             `;
         }
         
+        // Get filtered gifts
+        const filteredGifts = this.getFilteredUserGifts();
+        
+        if (filteredGifts.length === 0) {
+            return `
+                <div class="empty-collection">
+                    <div class="empty-icon">🔍</div>
+                    <h3>No gifts in this category</h3>
+                    <p>Try selecting a different category.</p>
+                    <button class="btn btn-secondary" onclick="window.ProfileManager.setCollectionFilter('all')">
+                        Show All Gifts
+                    </button>
+                </div>
+            `;
+        }
+        
         return `
-            <div class="collection-grid">
-                ${this.userGifts.map(userGift => this.renderCollectionItem(userGift)).join('')}
+            <div class="collection-controls">
+                <div class="collection-stats">
+                    <span>${filteredGifts.length} of ${this.userGifts.length} gifts</span>
+                </div>
+                <div class="collection-filters">
+                    ${this.renderCollectionFilters()}
+                </div>
+            </div>
+            
+            <div class="collection-grid" id="collection-grid">
+                ${filteredGifts.map(userGift => this.renderCollectionItem(userGift)).join('')}
             </div>
         `;
     }
@@ -227,24 +279,38 @@ class ProfileManager {
         if (!gift) return '';
         
         const obtainedDate = new Date(userGift.obtained_at).toLocaleDateString();
+        const timeAgo = Utils.timeAgo(userGift.obtained_at);
+        const rarityClass = this.getRarityClass(gift);
         
         return `
-            <div class="collection-item" data-gift-id="${gift.id}">
+            <div class="collection-item ${rarityClass}" data-gift-id="${gift.id}">
                 <div class="collection-image">
-                    <img src="${gift.image_url}" alt="${gift.name}" loading="lazy" />
+                    <img 
+                        data-src="${gift.image_url}" 
+                        alt="${gift.name}" 
+                        class="lazy-image"
+                        style="opacity: 0; transition: opacity 0.3s ease;"
+                    />
+                    <div class="image-placeholder">
+                        <div class="placeholder-shimmer"></div>
+                    </div>
                     <div class="collection-overlay">
-                        <button class="share-btn" data-gift-id="${gift.id}">
-                            📤 Share
+                        <button class="share-btn" data-gift-id="${gift.id}" title="Share this gift">
+                            📤
+                        </button>
+                        <button class="view-btn" data-gift-id="${gift.id}" title="View details">
+                            👁️
                         </button>
                     </div>
+                    ${gift.rarity ? `<div class="rarity-badge rarity-${gift.rarity}">${this.getRarityIcon(gift.rarity)}</div>` : ''}
                 </div>
                 
                 <div class="collection-info">
-                    <h4>${gift.name}</h4>
-                    <p class="collection-date">Collected ${obtainedDate}</p>
+                    <h4 title="${gift.name}">${Utils.truncateText(gift.name, 30)}</h4>
+                    <p class="collection-date" title="Collected ${obtainedDate}">${timeAgo}</p>
                     <div class="collection-meta">
                         <span class="price-paid">${Utils.formatPoints(gift.price_points)} pts</span>
-                        <span class="category">${gift.category}</span>
+                        <span class="category">${this.getCategoryIcon(gift.category)} ${gift.category}</span>
                     </div>
                 </div>
             </div>
@@ -372,22 +438,49 @@ class ProfileManager {
     // ======================
     
     shareProfile() {
+        const rank = window.LeaderboardManager?.getCurrentUserRank();
+        const categories = this.getUserGiftCategories();
+        const favoriteCategory = this.getFavoriteCategory(categories);
+        const totalSpent = this.getTotalSpent();
+        
         const message = `🎁 Check out my FanZone collection!\n\n` +
                        `👤 ${this.user.username}\n` +
                        `🏆 ${this.userGifts.length} gifts collected\n` +
-                       `💰 ${Utils.formatPoints(this.user.points)} points\n\n` +
+                       `💰 ${Utils.formatPoints(this.user.points)} points\n` +
+                       `${rank ? `🥇 Rank #${rank}` : ''}\n` +
+                       `${favoriteCategory ? `⭐ Favorite: ${favoriteCategory}` : ''}\n` +
+                       `💸 Total spent: ${Utils.formatPoints(totalSpent)} pts\n\n` +
                        `Join me in collecting digital gifts! 🚀`;
         
         if (Utils.isTelegramWebApp()) {
-            Utils.sendTelegramData({ action: 'share_profile', message });
+            // Enhanced Telegram sharing with more data
+            const shareData = {
+                action: 'share_profile',
+                message,
+                user_stats: {
+                    gifts_count: this.userGifts.length,
+                    points: this.user.points,
+                    rank: rank || null,
+                    favorite_category: favoriteCategory,
+                    total_spent: totalSpent
+                }
+            };
+            
+            Utils.sendTelegramData(shareData);
+            Utils.showToast('Profile shared!', 'success');
         } else {
             Utils.copyToClipboard(message);
+            Utils.showToast('Profile copied to clipboard!', 'success');
         }
         
         Utils.hapticFeedback('success');
         
-        // Track share
-        window.FanZoneApp?.trackEvent('profile_shared');
+        // Track share with more details
+        window.FanZoneApp?.trackEvent('profile_shared', {
+            gifts_count: this.userGifts.length,
+            total_spent: totalSpent,
+            rank: rank || null
+        });
     }
     
     shareGift(giftId) {
@@ -411,6 +504,157 @@ class ProfileManager {
         
         // Track share
         window.FanZoneApp?.trackEvent('gift_shared', { gift_id: giftId, gift_name: gift.name });
+    }
+    
+    // ======================
+    // Lazy Loading & Performance
+    // ======================
+    
+    setupLazyLoading() {
+        if ('IntersectionObserver' in window) {
+            this.observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        this.loadImage(entry.target);
+                        this.observer.unobserve(entry.target);
+                    }
+                });
+            }, {
+                rootMargin: '50px 0px',
+                threshold: 0.1
+            });
+        }
+        
+        // Fallback for browsers without IntersectionObserver
+        setTimeout(() => {
+            this.loadAllImages();
+        }, 100);
+    }
+    
+    loadImage(img) {
+        const src = img.dataset.src;
+        if (src) {
+            const newImg = new Image();
+            newImg.onload = () => {
+                img.src = src;
+                img.style.opacity = '1';
+                img.removeAttribute('data-src');
+                
+                // Hide placeholder
+                const placeholder = img.nextElementSibling;
+                if (placeholder && placeholder.classList.contains('image-placeholder')) {
+                    placeholder.style.display = 'none';
+                }
+                
+                this.visibleGifts.add(img.closest('[data-gift-id]')?.dataset.giftId);
+            };
+            newImg.onerror = () => {
+                img.src = 'https://via.placeholder.com/150x100/e0e0e0/999999?text=Gift';
+                img.style.opacity = '0.5';
+            };
+            newImg.src = src;
+        }
+    }
+    
+    loadAllImages() {
+        const lazyImages = document.querySelectorAll('.lazy-image[data-src]');
+        lazyImages.forEach(img => {
+            if (this.observer) {
+                this.observer.observe(img);
+            } else {
+                this.loadImage(img);
+            }
+        });
+    }
+    
+    handleResize() {
+        // Re-setup lazy loading after layout changes
+        setTimeout(() => {
+            this.loadAllImages();
+        }, 100);
+    }
+    
+    // ======================
+    // Collection Filtering
+    // ======================
+    
+    renderCollectionFilters() {
+        const categories = this.getUserGiftCategories();
+        const filterButtons = ['all', ...Object.keys(categories)];
+        
+        return filterButtons.map(filter => {
+            const isActive = this.currentFilter === filter;
+            const count = filter === 'all' ? this.userGifts.length : categories[filter];
+            const icon = this.getCategoryIcon(filter);
+            
+            return `
+                <button class="filter-btn ${isActive ? 'active' : ''}" data-filter="${filter}">
+                    ${icon} ${filter.charAt(0).toUpperCase() + filter.slice(1)} (${count})
+                </button>
+            `;
+        }).join('');
+    }
+    
+    setCollectionFilter(filter) {
+        this.currentFilter = filter;
+        
+        // Re-render collection with new filter
+        const collectionTab = document.getElementById('collection-tab');
+        if (collectionTab && collectionTab.classList.contains('active')) {
+            collectionTab.innerHTML = this.renderCollection();
+            this.loadAllImages();
+        }
+        
+        // Track filter usage
+        window.FanZoneApp?.trackEvent('profile_filter', { filter });
+    }
+    
+    getFilteredUserGifts() {
+        if (this.currentFilter === 'all') {
+            return this.userGifts;
+        }
+        
+        return this.userGifts.filter(userGift => 
+            userGift.gift?.category === this.currentFilter
+        );
+    }
+    
+    showGiftDetails(giftId) {
+        const userGift = this.userGifts.find(ug => ug.gift?.id === giftId);
+        if (!userGift || !userGift.gift) return;
+        
+        const gift = userGift.gift;
+        const obtainedDate = new Date(userGift.obtained_at).toLocaleDateString();
+        const timeAgo = Utils.timeAgo(userGift.obtained_at);
+        
+        const message = `🎁 ${gift.name}\n\n` +
+                       `${gift.description}\n\n` +
+                       `📅 Collected: ${obtainedDate} (${timeAgo})\n` +
+                       `💰 Paid: ${Utils.formatPoints(gift.price_points)} points\n` +
+                       `🏷️ Category: ${gift.category}\n` +
+                       `${gift.rarity ? `✨ Rarity: ${gift.rarity}\n` : ''}` +
+                       `\nTap 📤 to share this gift!`;
+        
+        Utils.showToast(message, 'info', 5000);
+        Utils.hapticFeedback('light');
+        
+        // Track gift view
+        window.FanZoneApp?.trackEvent('collection_gift_view', {
+            gift_id: giftId,
+            gift_name: gift.name
+        });
+    }
+    
+    showLoadingState() {
+        const container = Utils.getElementById('profile-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>Loading your collection...</p>
+                </div>
+            `;
+        }
     }
     
     // ======================
@@ -449,6 +693,44 @@ class ProfileManager {
         });
         
         return favoriteCategory;
+    }
+    
+    getRarityClass(gift) {
+        if (gift.rarity) {
+            return `rarity-${gift.rarity}`;
+        }
+        
+        // Fallback based on price
+        if (gift.price_points >= 150) return 'rarity-legendary';
+        if (gift.price_points >= 100) return 'rarity-epic';
+        if (gift.price_points >= 50) return 'rarity-rare';
+        return 'rarity-common';
+    }
+    
+    getRarityIcon(rarity) {
+        const icons = {
+            'common': '⚪',
+            'rare': '🔵',
+            'epic': '🟣',
+            'legendary': '🟡'
+        };
+        return icons[rarity] || '⚪';
+    }
+    
+    getCategoryIcon(category) {
+        const icons = {
+            'match': '⚽',
+            'trophy': '🏆',
+            'player': '👕',
+            'special': '⭐',
+            'general': '🎁',
+            'all': '🎁'
+        };
+        return icons[category] || '🎁';
+    }
+    
+    getTotalSpent() {
+        return this.purchaseHistory.reduce((sum, item) => sum + item.points_spent, 0);
     }
     
     showError(message) {
