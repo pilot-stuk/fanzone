@@ -214,3 +214,5 @@ shrimp-task/
 profile/
 *.cpuprofile
 *.heapprofile
+
+SETUP.md

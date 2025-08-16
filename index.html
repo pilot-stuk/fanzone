@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FanZone - Digital Gifts</title>
+    
+    <!-- Telegram Web App -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Telegram Web App specific meta tags -->
+    <meta name="telegram-web-app" content="true">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    
+    <!-- Theme color for Telegram integration -->
+    <meta name="theme-color" content="#3390ec">
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Local stylesheets -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Loading Screen -->
+        <div id="loading" class="loading-screen">
+            <div class="loading-spinner"></div>
+            <p>Loading FanZone...</p>
+        </div>
+
+        <!-- Main App Container -->
+        <div id="main-app" class="main-container" style="display: none;">
+            <!-- Header -->
+            <header class="app-header">
+                <h1>🎁 FanZone</h1>
+                <div class="user-info">
+                    <span id="user-name">Loading...</span>
+                    <span id="user-points" class="points-badge">0 pts</span>
+                </div>
+            </header>
+
+            <!-- Navigation -->
+            <nav class="bottom-nav">
+                <button class="nav-btn active" data-page="gifts">
+                    🎁 Gifts
+                </button>
+                <button class="nav-btn" data-page="leaderboard">
+                    🏆 Ranking
+                </button>
+                <button class="nav-btn" data-page="profile">
+                    👤 Profile
+                </button>
+            </nav>
+
+            <!-- Page Content -->
+            <main class="page-content">
+                <!-- Gifts Page -->
+                <div id="gifts-page" class="page active">
+                    <div class="page-header">
+                        <h2>Available Gifts</h2>
+                        <p>Collect digital gifts and climb the leaderboard!</p>
+                    </div>
+                    <div id="gifts-container" class="gifts-grid">
+                        <!-- Gifts will be loaded here -->
+                        <div class="welcome-message">
+                            <h3>Welcome to FanZone! 🎉</h3>
+                            <p>You start with <strong>100 points</strong>. Use them to collect amazing digital gifts!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leaderboard Page -->
+                <div id="leaderboard-page" class="page">
+                    <div class="page-header">
+                        <h2>Leaderboard</h2>
+                        <p>Top collectors this week</p>
+                    </div>
+                    <div id="leaderboard-container">
+                        <!-- Leaderboard will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Profile Page -->
+                <div id="profile-page" class="page">
+                    <div class="page-header">
+                        <h2>My Collection</h2>
+                        <p>Your digital trophy case</p>
+                    </div>
+                    <div id="profile-container">
+                        <!-- Profile will be loaded here -->
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="error-overlay" style="display: none;">
+            <div class="error-content">
+                <h3>Oops! Something went wrong</h3>
+                <p id="error-text"></p>
+                <button id="retry-btn" class="btn btn-primary">Try Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load all JavaScript modules -->
+    <script src="config.js"></script>
+    <script src="utils.js"></script>
+    <script src="app.js"></script>
+    <script src="gifts.js"></script>
+    <script src="leaderboard.js"></script>
+    <script src="profile.js"></script>
+</body>
+</html>
