@@ -390,12 +390,47 @@ body {
     border: 1px solid var(--tg-theme-secondary-bg-color);
     border-radius: var(--border-radius);
     margin-bottom: 12px;
-    transition: var(--transition);
+    transition: all var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.leaderboard-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .leaderboard-item.current-user {
     border-color: var(--primary-color);
     background: rgba(51, 144, 236, 0.05);
+    box-shadow: 0 2px 8px rgba(51, 144, 236, 0.2);
+}
+
+/* Rank change animation */
+.leaderboard-item.rank-changed {
+    animation: rankChangeFlash 0.6s ease-in-out;
+}
+
+@keyframes rankChangeFlash {
+    0%, 100% { background: var(--tg-theme-bg-color); }
+    50% { background: rgba(51, 144, 236, 0.15); }
+}
+
+/* Rank-specific styling */
+.leaderboard-item.top-three {
+    border-left: 4px solid #FFD700;
+}
+
+.leaderboard-item.top-ten {
+    border-left: 4px solid #32CD32;
+}
+
+.leaderboard-item.top-fifty {
+    border-left: 4px solid #FF6B6B;
+}
+
+.leaderboard-item.needs-improvement {
+    border-left: 4px solid #95A5A6;
 }
 
 .rank-section {
@@ -462,6 +497,69 @@ body {
 .empty-state, .error-state {
     text-align: center;
     padding: 40px 20px;
+}
+
+/* Enhanced Leaderboard Features */
+.rank-tip {
+    font-size: 10px;
+    color: var(--tg-theme-hint-color);
+    font-weight: 500;
+}
+
+.rank-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.ranking-tip {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.ranking-tip.success {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.ranking-tip.good {
+    background: rgba(255, 152, 0, 0.1);
+    color: var(--warning-color);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.ranking-tip.progress {
+    background: rgba(51, 144, 236, 0.1);
+    color: var(--primary-color);
+    border: 1px solid rgba(51, 144, 236, 0.3);
+}
+
+.ranking-tip.motivate {
+    background: rgba(149, 165, 166, 0.1);
+    color: var(--tg-theme-hint-color);
+    border: 1px solid rgba(149, 165, 166, 0.3);
+}
+
+.rank-trend {
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+/* Performance optimizations for large lists */
+.leaderboard-list {
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+.leaderboard-item {
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 /* Profile Styles */
