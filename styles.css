@@ -1,5 +1,6 @@
-/* Telegram-themed CSS Variables */
+/* Telegram-themed CSS Variables with Enhanced Mobile Support */
 :root {
+    /* Telegram theme variables */
     --tg-theme-bg-color: #ffffff;
     --tg-theme-text-color: #000000;
     --tg-theme-hint-color: #707579;
@@ -7,24 +8,145 @@
     --tg-theme-button-color: #3390ec;
     --tg-theme-button-text-color: #ffffff;
     --tg-theme-secondary-bg-color: #f4f4f5;
+    --tg-theme-header-bg-color: #ffffff;
+    --tg-theme-accent-text-color: #3390ec;
+    --tg-theme-section-bg-color: #ffffff;
+    --tg-theme-section-header-text-color: #707579;
+    --tg-theme-subtitle-text-color: #707579;
+    --tg-theme-destructive-text-color: #ff3b30;
     
-    /* Custom colors */
-    --primary-color: #3390ec;
-    --secondary-color: #f4f4f5;
+    /* Custom derived colors */
+    --primary-color: var(--tg-theme-button-color);
+    --secondary-color: var(--tg-theme-secondary-bg-color);
     --success-color: #4CAF50;
     --warning-color: #FF9800;
-    --error-color: #f44336;
+    --error-color: var(--tg-theme-destructive-text-color);
+    
+    /* Mobile-optimized spacing and sizing */
     --border-radius: 12px;
+    --border-radius-sm: 8px;
+    --border-radius-lg: 16px;
+    
+    /* Responsive spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    --spacing-xxl: 24px;
+    
+    /* Touch targets */
+    --touch-target-min: 44px;
+    --touch-target-comfortable: 48px;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    --transition: all 0.3s ease;
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+    --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.2);
+    
+    /* Transitions */
+    --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* Typography scale */
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-base: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 18px;
+    --font-size-2xl: 20px;
+    --font-size-3xl: 24px;
+    
+    /* Line heights */
+    --line-height-tight: 1.2;
+    --line-height-normal: 1.4;
+    --line-height-relaxed: 1.6;
+    
+    /* Safe area insets */
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-right: env(safe-area-inset-right, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-left: env(safe-area-inset-left, 0px);
+    
+    /* Viewport dimensions */
+    --viewport-width: 100vw;
+    --viewport-height: 100vh;
 }
 
-/* Apply Telegram theme variables if available */
+/* Enhanced Dark Theme Support */
 body.theme-dark {
     --tg-theme-bg-color: #212121;
     --tg-theme-text-color: #ffffff;
-    --tg-theme-hint-color: #707579;
+    --tg-theme-hint-color: #8e8e93;
     --tg-theme-secondary-bg-color: #181818;
+    --tg-theme-header-bg-color: #1c1c1e;
+    --tg-theme-section-bg-color: #2c2c2e;
+    
+    /* Dark theme shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.5);
+    
+    /* Adjust border colors */
+    --border-color: rgba(255, 255, 255, 0.1);
+    --border-color-light: rgba(255, 255, 255, 0.05);
+}
+
+/* Responsive breakpoints and mobile-first design */
+/* Mobile phones (portrait) - 320px to 480px */
+@media (max-width: 480px) {
+    :root {
+        --font-size-base: 14px;
+        --font-size-lg: 16px;
+        --font-size-xl: 18px;
+        --font-size-2xl: 20px;
+        --font-size-3xl: 22px;
+        
+        --spacing-sm: 8px;
+        --spacing-md: 12px;
+        --spacing-lg: 16px;
+        --spacing-xl: 20px;
+        --spacing-xxl: 24px;
+        
+        --border-radius: 10px;
+        --border-radius-sm: 6px;
+        --border-radius-lg: 14px;
+    }
+}
+
+/* Small mobile phones - 320px to 375px */
+@media (max-width: 375px) {
+    :root {
+        --font-size-xs: 10px;
+        --font-size-sm: 11px;
+        --font-size-base: 13px;
+        --font-size-lg: 15px;
+        
+        --spacing-xs: 3px;
+        --spacing-sm: 6px;
+        --spacing-md: 10px;
+        --spacing-lg: 14px;
+        --spacing-xl: 18px;
+        --spacing-xxl: 22px;
+    }
+}
+
+/* Touch-optimized interactive elements */
+@media (pointer: coarse) {
+    :root {
+        --touch-target-min: 48px;
+        --touch-target-comfortable: 52px;
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    :root {
+        --border-width: 0.5px;
+    }
 }
 
 /* Reset and base styles */
@@ -35,13 +157,41 @@ body.theme-dark {
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background-color: var(--tg-theme-bg-color);
     color: var(--tg-theme-text-color);
-    line-height: 1.6;
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-normal);
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    
+    /* Mobile optimizations */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    
+    /* Safe area support */
+    padding-top: var(--safe-area-inset-top);
+    padding-bottom: var(--safe-area-inset-bottom);
+    padding-left: var(--safe-area-inset-left);
+    padding-right: var(--safe-area-inset-right);
+    
+    /* Smooth transitions */
+    transition: background-color var(--transition), color var(--transition);
+}
+
+/* Enhanced keyboard handling */
+body.keyboard-open {
+    /* Adjust layout when virtual keyboard is open */
+    --viewport-height: calc(100vh - var(--keyboard-height, 0px));
+}
+
+/* Smooth scrolling for all platforms */
+html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Loading Screen */
@@ -471,25 +621,116 @@ body {
     animation: spin 1s linear infinite;
 }
 
-/* Mobile responsive adjustments */
+/* Enhanced Mobile Responsive Design */
+/* Tablet and small desktop */
 @media (max-width: 768px) {
+    .app-header {
+        padding: var(--spacing-lg) var(--spacing-xl);
+    }
+    
+    .app-header h1 {
+        font-size: var(--font-size-xl);
+    }
+    
     .gifts-controls {
-        padding: 16px;
+        padding: var(--spacing-lg);
+        position: sticky;
+        top: 80px;
+        background: var(--tg-theme-bg-color);
+        backdrop-filter: blur(10px);
+        z-index: 90;
     }
     
     .gifts-grid {
-        padding: 16px;
+        padding: var(--spacing-lg);
         grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 16px;
+        gap: var(--spacing-lg);
     }
     
     .filter-buttons {
-        gap: 6px;
+        gap: var(--spacing-sm);
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    
+    .filter-buttons::-webkit-scrollbar {
+        display: none;
     }
     
     .filter-btn {
-        padding: 6px 12px;
-        font-size: 12px;
+        padding: var(--spacing-sm) var(--spacing-md);
+        font-size: var(--font-size-sm);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    
+    .page-content {
+        padding-bottom: calc(80px + var(--safe-area-inset-bottom));
+    }
+    
+    .bottom-nav {
+        padding-bottom: var(--safe-area-inset-bottom);
+    }
+}
+
+/* Mobile phones */
+@media (max-width: 480px) {
+    .app-header {
+        padding: var(--spacing-md) var(--spacing-lg);
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+    }
+    
+    .app-header h1 {
+        font-size: var(--font-size-lg);
+    }
+    
+    .user-info {
+        font-size: var(--font-size-xs);
+        gap: var(--spacing-sm);
+    }
+    
+    .points-badge {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: var(--font-size-xs);
+    }
+    
+    .gifts-controls {
+        padding: var(--spacing-md);
+        top: 70px;
+    }
+    
+    .gifts-grid {
+        padding: var(--spacing-md);
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: var(--spacing-md);
+    }
+    
+    .gift-card {
+        border-radius: var(--border-radius-sm);
+    }
+    
+    .gift-info {
+        padding: var(--spacing-md);
+    }
+    
+    .gift-header h3 {
+        font-size: var(--font-size-sm);
+    }
+    
+    .gift-description {
+        font-size: var(--font-size-xs);
+    }
+    
+    .price-tag {
+        font-size: var(--font-size-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+    
+    .nav-btn {
+        padding: var(--spacing-md) var(--spacing-sm);
+        font-size: var(--font-size-xs);
     }
 }
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -586,19 +827,77 @@ body {
     background: var(--tg-theme-secondary-bg-color);
 }
 
-/* Buttons */
+/* Enhanced Button System */
 .btn {
-    display: inline-block;
-    padding: 12px 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-xl);
     border: none;
     border-radius: var(--border-radius);
-    font-size: 14px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    line-height: var(--line-height-tight);
     cursor: pointer;
     transition: var(--transition);
     text-decoration: none;
     text-align: center;
-    min-height: 44px; /* Touch-friendly */
+    min-height: var(--touch-target-min);
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    
+    /* Touch optimizations */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* Button states and animations */
+.btn:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.btn:active:before {
+    left: 100%;
+}
+
+.btn:focus {
+    outline: 2px solid var(--tg-theme-accent-text-color);
+    outline-offset: 2px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Touch feedback */
+.btn.touch-active,
+.btn:active {
+    transform: scale(0.98);
+}
+
+/* Button size variants */
+.btn-sm {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-sm);
+    min-height: calc(var(--touch-target-min) * 0.8);
+}
+
+.btn-lg {
+    padding: var(--spacing-lg) var(--spacing-xxl);
+    font-size: var(--font-size-lg);
+    min-height: var(--touch-target-comfortable);
 }
 
 .btn-primary {
@@ -671,18 +970,226 @@ body {
     }
 }
 
-/* Animations */
+/* Enhanced Animation System */
 .fade-in {
-    animation: fadeIn 0.3s ease;
+    animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .slide-up {
-    animation: slideUp 0.3s ease;
+    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-down {
+    animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.scale-in {
+    animation: scaleIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bounce-in {
+    animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* Page transition animations */
+.page-transition-enter {
+    animation: pageEnter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.page-transition-exit {
+    animation: pageExit 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Loading animations */
+.pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.skeleton-wave {
+    animation: skeletonWave 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+/* Interaction animations */
+.ripple {
+    position: relative;
+    overflow: hidden;
+}
+
+.ripple::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+    pointer-events: none;
+}
+
+.ripple:active::before {
+    width: 300px;
+    height: 300px;
+}
+
+/* Keyframe definitions */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 @keyframes slideUp {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    from { 
+        transform: translateY(20px); 
+        opacity: 0; 
+    }
+    to { 
+        transform: translateY(0); 
+        opacity: 1; 
+    }
+}
+
+@keyframes slideDown {
+    from { 
+        transform: translateY(-20px); 
+        opacity: 0; 
+    }
+    to { 
+        transform: translateY(0); 
+        opacity: 1; 
+    }
+}
+
+@keyframes scaleIn {
+    from { 
+        transform: scale(0.9); 
+        opacity: 0; 
+    }
+    to { 
+        transform: scale(1); 
+        opacity: 1; 
+    }
+}
+
+@keyframes bounceIn {
+    from {
+        transform: scale(0.3);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pageEnter {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes pageExit {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% { 
+        opacity: 1; 
+    }
+    50% { 
+        opacity: 0.5; 
+    }
+}
+
+@keyframes skeletonWave {
+    0% {
+        transform: translateX(-100%);
+    }
+    50% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes spin {
+    from { 
+        transform: rotate(0deg); 
+    }
+    to { 
+        transform: rotate(360deg); 
+    }
+}
+
+/* Stagger animation delays for lists */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* Hover and focus animations */
+.hover-lift {
+    transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.hover-scale {
+    transition: transform var(--transition);
+}
+
+.hover-scale:hover {
+    transform: scale(1.02);
+}
+
+/* Micro-interactions */
+.micro-bounce {
+    transition: transform var(--transition-fast);
+}
+
+.micro-bounce:active {
+    transform: scale(0.95);
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 /* Leaderboard Styles */
@@ -1433,10 +1940,222 @@ body {
     }
 }
 
-/* Utility Classes */
+/* Telegram-Specific UI Components */
+.telegram-card {
+    background: var(--tg-theme-section-bg-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color));
+    transition: var(--transition);
+}
+
+.telegram-card:hover {
+    box-shadow: var(--shadow);
+    transform: translateY(-1px);
+}
+
+.telegram-list-item {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color-light, var(--tg-theme-secondary-bg-color));
+    transition: var(--transition);
+    cursor: pointer;
+}
+
+.telegram-list-item:hover {
+    background: var(--tg-theme-secondary-bg-color);
+}
+
+.telegram-list-item:last-child {
+    border-bottom: none;
+}
+
+.telegram-badge {
+    background: var(--tg-theme-accent-text-color);
+    color: var(--tg-theme-button-text-color);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.telegram-divider {
+    height: 1px;
+    background: var(--border-color-light, var(--tg-theme-secondary-bg-color));
+    margin: var(--spacing-lg) 0;
+}
+
+.telegram-section-header {
+    color: var(--tg-theme-section-header-text-color);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--spacing-md);
+    padding: 0 var(--spacing-lg);
+}
+
+/* Performance optimizations for mobile */
+.gpu-accelerated {
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+.scroll-smooth {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+}
+
+/* Touch interaction states */
+.touch-feedback {
+    transition: var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-feedback:active {
+    transform: scale(0.98);
+    opacity: 0.8;
+}
+
+/* Dark mode specific adjustments */
+body.theme-dark .telegram-card {
+    border-color: var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+body.theme-dark .telegram-list-item:hover {
+    background: var(--border-color-light);
+}
+
+/* Utility Classes - Enhanced */
 .text-center { text-align: center; }
-.text-small { font-size: 12px; }
-.text-muted { color: var(--tg-theme-hint-color); }
-.mt-16 { margin-top: 16px; }
-.mb-16 { margin-bottom: 16px; }
-.p-20 { padding: 20px; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+
+.text-primary { color: var(--tg-theme-accent-text-color); }
+.text-secondary { color: var(--tg-theme-hint-color); }
+.text-muted { color: var(--tg-theme-subtitle-text-color); }
+.text-error { color: var(--tg-theme-destructive-text-color); }
+
+.font-normal { font-weight: 400; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+
+/* Spacing utilities */
+.m-0 { margin: 0; }
+.m-xs { margin: var(--spacing-xs); }
+.m-sm { margin: var(--spacing-sm); }
+.m-md { margin: var(--spacing-md); }
+.m-lg { margin: var(--spacing-lg); }
+.m-xl { margin: var(--spacing-xl); }
+
+.mt-xs { margin-top: var(--spacing-xs); }
+.mt-sm { margin-top: var(--spacing-sm); }
+.mt-md { margin-top: var(--spacing-md); }
+.mt-lg { margin-top: var(--spacing-lg); }
+.mt-xl { margin-top: var(--spacing-xl); }
+
+.mb-xs { margin-bottom: var(--spacing-xs); }
+.mb-sm { margin-bottom: var(--spacing-sm); }
+.mb-md { margin-bottom: var(--spacing-md); }
+.mb-lg { margin-bottom: var(--spacing-lg); }
+.mb-xl { margin-bottom: var(--spacing-xl); }
+
+.p-0 { padding: 0; }
+.p-xs { padding: var(--spacing-xs); }
+.p-sm { padding: var(--spacing-sm); }
+.p-md { padding: var(--spacing-md); }
+.p-lg { padding: var(--spacing-lg); }
+.p-xl { padding: var(--spacing-xl); }
+
+.px-xs { padding-left: var(--spacing-xs); padding-right: var(--spacing-xs); }
+.px-sm { padding-left: var(--spacing-sm); padding-right: var(--spacing-sm); }
+.px-md { padding-left: var(--spacing-md); padding-right: var(--spacing-md); }
+.px-lg { padding-left: var(--spacing-lg); padding-right: var(--spacing-lg); }
+.px-xl { padding-left: var(--spacing-xl); padding-right: var(--spacing-xl); }
+
+.py-xs { padding-top: var(--spacing-xs); padding-bottom: var(--spacing-xs); }
+.py-sm { padding-top: var(--spacing-sm); padding-bottom: var(--spacing-sm); }
+.py-md { padding-top: var(--spacing-md); padding-bottom: var(--spacing-md); }
+.py-lg { padding-top: var(--spacing-lg); padding-bottom: var(--spacing-lg); }
+.py-xl { padding-top: var(--spacing-xl); padding-bottom: var(--spacing-xl); }
+
+/* Display utilities */
+.hidden { display: none !important; }
+.block { display: block !important; }
+.inline { display: inline !important; }
+.inline-block { display: inline-block !important; }
+.flex { display: flex !important; }
+.inline-flex { display: inline-flex !important; }
+.grid { display: grid !important; }
+
+/* Flex utilities */
+.flex-row { flex-direction: row; }
+.flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-nowrap { flex-wrap: nowrap; }
+
+.justify-start { justify-content: flex-start; }
+.justify-center { justify-content: center; }
+.justify-end { justify-content: flex-end; }
+.justify-between { justify-content: space-between; }
+.justify-around { justify-content: space-around; }
+
+.items-start { align-items: flex-start; }
+.items-center { align-items: center; }
+.items-end { align-items: flex-end; }
+.items-stretch { align-items: stretch; }
+
+.flex-1 { flex: 1 1 0%; }
+.flex-auto { flex: 1 1 auto; }
+.flex-none { flex: none; }
+
+/* Border utilities */
+.border { border: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color)); }
+.border-t { border-top: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color)); }
+.border-b { border-bottom: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color)); }
+.border-l { border-left: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color)); }
+.border-r { border-right: 1px solid var(--border-color, var(--tg-theme-secondary-bg-color)); }
+
+.rounded { border-radius: var(--border-radius); }
+.rounded-sm { border-radius: var(--border-radius-sm); }
+.rounded-lg { border-radius: var(--border-radius-lg); }
+.rounded-full { border-radius: 9999px; }
+
+/* Shadow utilities */
+.shadow-none { box-shadow: none; }
+.shadow-sm { box-shadow: var(--shadow-sm); }
+.shadow { box-shadow: var(--shadow); }
+.shadow-lg { box-shadow: var(--shadow-lg); }
+.shadow-xl { box-shadow: var(--shadow-xl); }
+
+/* Overflow utilities */
+.overflow-hidden { overflow: hidden; }
+.overflow-auto { overflow: auto; }
+.overflow-scroll { overflow: scroll; }
+
+/* Position utilities */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.fixed { position: fixed; }
+.sticky { position: sticky; }
+
+/* Z-index utilities */
+.z-0 { z-index: 0; }
+.z-10 { z-index: 10; }
+.z-20 { z-index: 20; }
+.z-30 { z-index: 30; }
+.z-40 { z-index: 40; }
+.z-50 { z-index: 50; }
