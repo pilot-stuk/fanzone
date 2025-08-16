@@ -650,6 +650,17 @@ Are you sure you want to collect this gift?`;
                 this.filterGifts();
                 this.renderGifts();
                 
+                // Update app's user display
+                window.FanZoneApp?.updateUserDisplay();
+                
+                // Refresh leaderboard and profile
+                if (window.LeaderboardManager) {
+                    window.LeaderboardManager.refresh();
+                }
+                if (window.ProfileManager) {
+                    window.ProfileManager.refresh();
+                }
+                
                 Utils.showToast(`🎉 ${gift.name} added to your collection!`, 'success');
                 Utils.hapticFeedback('success');
                 

@@ -308,19 +308,9 @@ class FanZoneApp {
             userPointsElement.textContent = `${Utils.formatPoints(this.user.points)} pts`;
         }
         
-        // Show mode indicator
+        // Hide mode indicator for cleaner UI
         if (appModeElement) {
-            if (Utils.isTelegramWebApp()) {
-                appModeElement.textContent = 'Telegram';
-                appModeElement.style.background = 'var(--success-color)';
-                if (CONFIG.DEBUG) {
-                    appModeElement.style.display = 'inline-block';
-                }
-            } else {
-                appModeElement.textContent = 'Demo';
-                appModeElement.style.background = 'var(--warning-color)';
-                appModeElement.style.display = 'inline-block';
-            }
+            appModeElement.style.display = 'none';
         }
     }
     

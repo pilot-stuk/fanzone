@@ -200,15 +200,23 @@ class ProfileManager {
         const rank = window.LeaderboardManager?.getCurrentUserRank();
         const joinDate = new Date(this.user.created_at).toLocaleDateString();
         
+        // Get enhanced user data from Telegram if available
+        const telegramUser = CONFIG.TELEGRAM?.USER_DATA;
+        const displayName = this.getDisplayName(telegramUser);
+        const avatarUrl = this.getTelegramAvatar(telegramUser);
+        
         return `
             <div class="user-avatar">
                 <div class="avatar-circle">
-                    ${this.getAvatarEmoji()}
+                    ${avatarUrl ? 
+                        `<img src="${avatarUrl}" alt="${displayName}" class="avatar-image" />` : 
+                        this.getAvatarEmoji()
+                    }
                 </div>
             </div>
             
             <div class="user-details">
-                <h2>${Utils.truncateText(this.user.username, 25)}</h2>
+                <h2>${Utils.truncateText(displayName, 25)}</h2>
                 <div class="user-badges">
                     <span class="badge points-badge">
                         💰 ${Utils.formatPoints(this.user.points)} points
@@ -217,6 +225,7 @@ class ProfileManager {
                 </div>
                 <div class="user-meta">
                     <span class="join-date">Joined ${joinDate}</span>
+                    ${telegramUser?.username ? `<span class="telegram-username">@${telegramUser.username}</span>` : ''}
                 </div>
             </div>
             
@@ -660,6 +669,30 @@ class ProfileManager {
     // ======================
     // Utility Methods
     // ======================
+    
+    getDisplayName(telegramUser) {
+        if (telegramUser) {
+            // Prefer Telegram display name
+            if (telegramUser.first_name) {
+                return [telegramUser.first_name, telegramUser.last_name]
+                    .filter(Boolean)
+                    .join(' ');
+            }
+            if (telegramUser.username) {
+                return telegramUser.username;
+            }
+        }
+        
+        // Fallback to stored username
+        return this.user.username || 'User';
+    }
+    
+    getTelegramAvatar(telegramUser) {
+        // In a real implementation, you would get the user's profile photo URL
+        // from the Telegram Bot API using the user's ID
+        // For MVP, we don't have access to profile photos
+        return null;
+    }
     
     getAvatarEmoji() {
         if (!this.user.username) return '👤';

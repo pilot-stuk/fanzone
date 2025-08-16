@@ -413,6 +413,14 @@ class AuthManager {
         try {
             // Set up main button if needed
             window.Telegram.WebApp.MainButton.setText('Start Collecting!');
+            window.Telegram.WebApp.MainButton.onClick(() => {
+                // Navigate to gifts page and ensure it's loaded
+                if (window.FanZoneApp) {
+                    window.FanZoneApp.navigateToPage('gifts');
+                    // Hide main button after starting
+                    window.Telegram.WebApp.MainButton.hide();
+                }
+            });
             window.Telegram.WebApp.MainButton.show();
             
             // Set up back button handler
