@@ -160,24 +160,31 @@ class LeaderboardManager {
     getSampleLeaderboard() {
         const currentUser = this.currentUser;
         
-        // Generate sample users
+        // Fix: More realistic sample users with proper engagement patterns
         const sampleUsers = [
-            { username: '⚡ Lightning', points: 850, total_gifts: 12 },
-            { username: '🔥 FireStorm', points: 720, total_gifts: 10 },
-            { username: '🚀 Rocket', points: 680, total_gifts: 9 },
-            { username: '💎 Diamond', points: 620, total_gifts: 8 },
-            { username: '🌟 StarPlayer', points: 580, total_gifts: 7 },
-            { username: '⚽ GoalKing', points: 520, total_gifts: 6 },
-            { username: '🏆 Champion', points: 480, total_gifts: 5 },
-            { username: '🎯 Sniper', points: 420, total_gifts: 4 },
-            { username: '🌪️ Tornado', points: 380, total_gifts: 3 },
-            { username: '💫 Comet', points: 320, total_gifts: 2 }
+            { username: '⚡ Lightning', points: 50, total_gifts: 12 }, // Spent 50 points, has gifts
+            { username: '🔥 FireStorm', points: 20, total_gifts: 10 }, // Spent 80 points, has gifts
+            { username: '🚀 Rocket', points: 45, total_gifts: 9 },    // Spent 55 points, has gifts
+            { username: '💎 Diamond', points: 10, total_gifts: 8 },   // Spent 90 points, has gifts
+            { username: '🌟 StarPlayer', points: 80, total_gifts: 7 }, // Spent 20 points, has gifts
+            { username: '⚽ GoalKing', points: 30, total_gifts: 6 },   // Spent 70 points, has gifts
+            { username: '🏆 Champion', points: 60, total_gifts: 5 },   // Spent 40 points, has gifts
+            { username: '🎯 Sniper', points: 25, total_gifts: 4 },     // Spent 75 points, has gifts
+            { username: '🌪️ Tornado', points: 75, total_gifts: 3 },   // Spent 25 points, has gifts
+            { username: '💫 Comet', points: 40, total_gifts: 2 }       // Spent 60 points, has gifts
         ];
         
-        // Insert current user if they should be in top 10
-        if (currentUser && currentUser.points > 320) {
-            // Find position where current user should be inserted
-            let insertIndex = sampleUsers.findIndex(user => user.points < currentUser.points);
+        // Fix: Don't include users with default 100 points and 0 gifts in leaderboard
+        // Only insert current user if they have actually engaged
+        if (currentUser && (currentUser.total_gifts > 0 || currentUser.points !== 100)) {
+            let insertIndex = sampleUsers.findIndex(user => {
+                // Prioritize by gifts, then points
+                if (currentUser.total_gifts !== user.total_gifts) {
+                    return currentUser.total_gifts > user.total_gifts;
+                }
+                return currentUser.points > user.points;
+            });
+            
             if (insertIndex === -1) insertIndex = sampleUsers.length;
             
             sampleUsers.splice(insertIndex, 0, {

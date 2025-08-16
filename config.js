@@ -12,11 +12,14 @@ const CONFIG = {
         ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzcWlldHpveHlqcHNscHJoZ2xnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzMzYwODQsImV4cCI6MjA3MDkxMjA4NH0.BWDR-R2slfTJbrpFvf9JlPmIf3FZRxolIZ7-Wyoqoe8',
     },
     
-    // Points System
+    // Fix: Better initial configuration
     POINTS: {
         INITIAL_POINTS: 100,
         DAILY_BONUS: 100,
         MAX_POINTS: 10000,
+        // Add minimum points for leaderboard visibility
+        MIN_LEADERBOARD_POINTS: 0,
+        MIN_GIFTS_FOR_RANKING: 1, // Users need at least 1 gift to rank highly
     },
     
     // Gift System
@@ -68,22 +71,28 @@ const CONFIG = {
         RETRY_DELAY: 1000,
     },
 
-    // Error Messages
+    // Fix: Better error messages
     MESSAGES: {
         ERRORS: {
-            NETWORK: 'Network error. Please check your connection.',
+            NETWORK: 'Network error. Please check your connection and try again.',
             AUTH: 'Authentication failed. Please restart the app.',
             INSUFFICIENT_POINTS: 'Not enough points for this gift.',
             OUT_OF_STOCK: 'This gift is out of stock.',
+            ALREADY_OWNED: 'You already own this gift.',
+            PURCHASE_FAILED: 'Purchase failed. Please try again.',
             GENERIC: 'Something went wrong. Please try again.',
+            PROFILE_LOAD_FAILED: 'Failed to load your profile. Please refresh.',
+            GIFTS_LOAD_FAILED: 'Failed to load gifts. Please refresh.',
         },
         SUCCESS: {
-            GIFT_PURCHASED: 'Gift successfully added to your collection!',
+            GIFT_PURCHASED: 'Gift successfully added to your collection! 🎉',
             PROFILE_UPDATED: 'Profile updated successfully!',
+            DATA_REFRESHED: 'Data refreshed successfully!',
         },
         INFO: {
-            WELCOME: 'Welcome to FanZone! Start collecting gifts!',
+            WELCOME: 'Welcome to FanZone! Start collecting gifts! 🎁',
             LOADING: 'Loading...',
+            PROCESSING: 'Processing...',
         }
     },
     

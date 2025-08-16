@@ -96,63 +96,116 @@ class ProfileManager {
             const supabase = app?.getSupabase();
             
             if (supabase) {
-                // Load user's gifts with gift details
+                // Fix: Proper JOIN query for user gifts
                 const { data: userGifts, error: giftsError } = await supabase
                     .from(CONFIG.TABLES.USER_GIFTS)
                     .select(`
-                        *,
-                        gift:gifts(*)
+                        id,
+                        gift_id,
+                        obtained_at,
+                        purchase_price,
+                        gifts!inner(
+                            id,
+                            name,
+                            description,
+                            image_url,
+                            price_points,
+                            category,
+                            rarity
+                        )
                     `)
                     .eq('user_id', this.user.id)
                     .order('obtained_at', { ascending: false });
                 
-                if (giftsError) throw giftsError;
+                if (giftsError) {
+                    console.error('Error loading user gifts:', giftsError);
+                    throw giftsError;
+                }
                 
-                this.userGifts = userGifts || [];
+                // Fix: Restructure data for easier access
+                this.userGifts = userGifts?.map(ug => ({
+                    ...ug,
+                    gift: ug.gifts // Normalize the gift data structure
+                })) || [];
                 
-                // Create purchase history from user gifts
+                // Fix: Create purchase history
                 this.purchaseHistory = this.userGifts.map(ug => ({
                     id: ug.id,
                     gift: ug.gift,
                     obtained_at: ug.obtained_at,
-                    points_spent: ug.gift?.price_points || 0
+                    points_spent: ug.purchase_price || ug.gift?.price_points || 0
                 }));
                 
+                console.log('User gifts loaded:', this.userGifts.length);
+                
             } else {
-                // MVP mode - load from localStorage
+                // Fix: Improved MVP mode loading
                 await this.loadMVPData();
             }
             
         } catch (error) {
             Utils.logError(error, 'Load user data');
-            throw error;
+            
+            // Fix: Fallback to MVP mode if database fails
+            if (error.message.includes('database') || error.message.includes('supabase')) {
+                console.warn('Database error, falling back to MVP mode');
+                await this.loadMVPData();
+            } else {
+                throw error;
+            }
         } finally {
             this.isLoading = false;
         }
     }
     
+    // Fix: Improved MVP data loading
     async loadMVPData() {
-        const giftIds = Utils.getStorage('user_gifts', []);
-        const allGifts = window.GiftsManager?.getGifts() || [];
-        
-        this.userGifts = giftIds.map(giftId => {
-            const gift = allGifts.find(g => g.id === giftId);
-            return {
-                id: Utils.generateId(),
-                gift_id: giftId,
-                gift: gift,
-                obtained_at: new Date().toISOString(),
-                user_id: this.user.id
-            };
-        }).filter(ug => ug.gift); // Only include gifts that exist
-        
-        // Create purchase history
-        this.purchaseHistory = this.userGifts.map(ug => ({
-            id: ug.id,
-            gift: ug.gift,
-            obtained_at: ug.obtained_at,
-            points_spent: ug.gift?.price_points || 0
-        }));
+        try {
+            const giftIds = Utils.getStorage('user_gifts', []);
+            console.log('Loading MVP gifts:', giftIds);
+            
+            // Get all available gifts
+            let allGifts = window.GiftsManager?.getGifts() || [];
+            
+            if (allGifts.length === 0) {
+                // Try to load gifts from storage
+                const storedGifts = Utils.getStorage('gifts_data', []);
+                if (storedGifts.length > 0) {
+                    allGifts = storedGifts;
+                }
+            }
+            
+            this.userGifts = giftIds.map((giftId, index) => {
+                const gift = allGifts.find(g => g.id === giftId);
+                if (!gift) {
+                    console.warn('Gift not found:', giftId);
+                    return null;
+                }
+                
+                return {
+                    id: `user_gift_${index}`,
+                    gift_id: giftId,
+                    gift: gift,
+                    obtained_at: new Date(Date.now() - (giftIds.length - index) * 60000).toISOString(), // Stagger times
+                    user_id: this.user.id
+                };
+            }).filter(Boolean); // Remove null entries
+            
+            // Create purchase history
+            this.purchaseHistory = this.userGifts.map(ug => ({
+                id: ug.id,
+                gift: ug.gift,
+                obtained_at: ug.obtained_at,
+                points_spent: ug.gift?.price_points || 0
+            }));
+            
+            console.log('MVP gifts loaded:', this.userGifts.length);
+            
+        } catch (error) {
+            console.error('MVP data loading failed:', error);
+            this.userGifts = [];
+            this.purchaseHistory = [];
+        }
     }
     
     // ======================

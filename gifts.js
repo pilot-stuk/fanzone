@@ -620,66 +620,103 @@ Are you sure you want to collect this gift?`;
             return;
         }
         
-        // Comprehensive validation checks
-        const validationResult = this.validatePurchase(gift, user);
-        if (!validationResult.valid) {
-            Utils.showToast(validationResult.message, validationResult.type);
+        // Fix: More thorough validation
+        if (this.userGifts.includes(giftId)) {
+            Utils.showToast('You already own this gift!', 'warning');
+            return;
+        }
+        
+        if (gift.current_supply >= gift.max_supply) {
+            Utils.showToast('This gift is out of stock!', 'error');
+            return;
+        }
+        
+        if (user.points < gift.price_points) {
+            const needed = gift.price_points - user.points;
+            Utils.showToast(`You need ${needed} more points to buy this gift`, 'warning');
             return;
         }
         
         this.isPurchasing = true;
         
         try {
-            // Show loading state with better UX
             this.setGiftButtonLoading(giftId, true);
-            
             Utils.showToast('Processing your purchase...', 'info');
             
-            // Process purchase with retry logic
-            const result = await this.processPurchaseWithRetry(giftId, gift);
+            const app = window.FanZoneApp;
+            const supabase = app?.getSupabase();
             
-            if (result.success) {
-                // Update local state immediately for better UX
-                this.userGifts.push(giftId);
-                gift.current_supply += 1;
-                
-                // Update user points locally
-                user.points -= gift.price_points;
-                
-                // Refresh UI
-                this.filterGifts();
-                this.renderGifts();
-                
-                // Update app's user display
-                window.FanZoneApp?.updateUserDisplay();
-                
-                // Refresh leaderboard and profile
-                if (window.LeaderboardManager) {
-                    window.LeaderboardManager.refresh();
-                }
-                if (window.ProfileManager) {
-                    window.ProfileManager.refresh();
-                }
-                
-                Utils.showToast(`🎉 ${gift.name} added to your collection!`, 'success');
-                Utils.hapticFeedback('success');
-                
-                // Track successful purchase
-                window.FanZoneApp?.trackEvent('gift_purchase_success', {
-                    gift_id: giftId,
-                    gift_name: gift.name,
-                    price: gift.price_points,
-                    remaining_points: user.points
+            if (supabase) {
+                // Fix: Use proper database function call
+                const { data: result, error } = await supabase.rpc('purchase_gift', {
+                    p_user_telegram_id: user.telegram_id,
+                    p_gift_id: giftId
                 });
                 
-                // Reload data from server to ensure consistency
-                setTimeout(() => {
-                    this.loadGifts().then(() => this.renderGifts());
-                }, 1000);
+                if (error) {
+                    console.error('Purchase error:', error);
+                    throw new Error(`Database error: ${error.message}`);
+                }
+                
+                if (!result || !result.success) {
+                    throw new Error(result?.message || 'Purchase failed');
+                }
+                
+                // Fix: Update local state immediately
+                this.userGifts.push(giftId);
+                user.points = result.remaining_points || (user.points - gift.price_points);
+                user.total_gifts = (user.total_gifts || 0) + 1;
+                
+                // Fix: Update gift supply locally
+                const giftIndex = this.gifts.findIndex(g => g.id === giftId);
+                if (giftIndex !== -1) {
+                    this.gifts[giftIndex].current_supply += 1;
+                }
+                
+                // Fix: Update stored user data
+                Utils.setStorage(CONFIG.STORAGE_KEYS.USER_DATA, user);
+                Utils.setStorage('user_gifts', this.userGifts);
                 
             } else {
-                throw new Error(result.message || 'Purchase failed');
+                // MVP mode - localStorage
+                const success = await app.updateUserPoints(-gift.price_points);
+                if (!success) {
+                    throw new Error('Failed to deduct points');
+                }
+                
+                this.userGifts.push(giftId);
+                Utils.setStorage('user_gifts', this.userGifts);
+                
+                gift.current_supply += 1;
+                Utils.setStorage('gifts_data', this.gifts);
             }
+            
+            // Fix: Refresh UI components
+            this.filterGifts();
+            this.renderGifts();
+            
+            if (window.FanZoneApp) {
+                window.FanZoneApp.updateUserDisplay();
+            }
+            
+            if (window.LeaderboardManager) {
+                window.LeaderboardManager.refresh();
+            }
+            
+            if (window.ProfileManager) {
+                window.ProfileManager.refresh();
+            }
+            
+            Utils.showToast(`🎉 ${gift.name} added to your collection!`, 'success');
+            Utils.hapticFeedback('success');
+            
+            // Track successful purchase
+            window.FanZoneApp?.trackEvent('gift_purchase_success', {
+                gift_id: giftId,
+                gift_name: gift.name,
+                price: gift.price_points,
+                remaining_points: user.points
+            });
             
         } catch (error) {
             Utils.logError(error, 'Gift purchase');
@@ -698,7 +735,6 @@ Are you sure you want to collect this gift?`;
             
             Utils.showToast(errorMessage, 'error');
             
-            // Track failed purchase
             window.FanZoneApp?.trackEvent('gift_purchase_failed', {
                 gift_id: giftId,
                 gift_name: gift.name,
