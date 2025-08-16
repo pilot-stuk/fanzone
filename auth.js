@@ -164,13 +164,38 @@ class AuthManager {
         
         try {
             if (supabase) {
-                // Database mode - use Supabase
-                return await this.createOrUpdateUserDB(telegramUser, supabase);
+                console.log('Attempting database user creation/update...');
+                
+                try {
+                    // Database mode - use Supabase
+                    return await this.createOrUpdateUserDB(telegramUser, supabase);
+                } catch (dbError) {
+                    console.error('Database operation failed, falling back to local storage:', dbError);
+                    
+                    // Check if it's a permission/RLS error
+                    if (dbError.message.includes('permission') || 
+                        dbError.message.includes('RLS') || 
+                        dbError.code === '42501') {
+                        
+                        console.warn('🔒 Database permission issue detected. Please configure Row Level Security policies in Supabase.');
+                        console.warn('For now, falling back to local storage mode.');
+                        
+                        // Show user-friendly message
+                        if (window.Utils && window.Utils.showToast) {
+                            window.Utils.showToast('Running in offline mode. Some features may be limited.', 'warning');
+                        }
+                    }
+                    
+                    // Fall back to local storage
+                    return await this.createOrUpdateUserLocal(telegramUser);
+                }
             } else {
+                console.log('No Supabase connection, using local storage...');
                 // MVP mode - use localStorage
                 return await this.createOrUpdateUserLocal(telegramUser);
             }
         } catch (error) {
+            console.error('All user creation methods failed:', error);
             Utils.logError(error, 'Create or update user');
             throw error;
         }
@@ -178,6 +203,8 @@ class AuthManager {
     
     async createOrUpdateUserDB(telegramUser, supabase) {
         try {
+            console.log('Creating/updating user in DB for Telegram ID:', telegramUser.id);
+            
             // Check if user exists
             const { data: existingUser, error: fetchError } = await supabase
                 .from(CONFIG.TABLES.USERS)
@@ -186,13 +213,18 @@ class AuthManager {
                 .single();
             
             if (fetchError && fetchError.code !== 'PGRST116') {
+                console.error('Error fetching user:', fetchError);
                 throw fetchError;
             }
             
             if (existingUser) {
+                console.log('Updating existing user:', existingUser.username);
+                
                 // Update existing user
                 const updateData = {
                     username: this.extractUsername(telegramUser),
+                    first_name: telegramUser.first_name || null,
+                    last_name: telegramUser.last_name || null,
                     last_login: new Date().toISOString()
                 };
                 
@@ -203,18 +235,30 @@ class AuthManager {
                     .select()
                     .single();
                 
-                if (updateError) throw updateError;
+                if (updateError) {
+                    console.error('Error updating user:', updateError);
+                    throw updateError;
+                }
                 
+                console.log('User updated successfully:', updatedUser.username);
                 return updatedUser;
                 
             } else {
+                console.log('Creating new user for:', telegramUser.id);
+                
                 // Create new user
                 const newUser = {
                     telegram_id: telegramUser.id,
                     username: this.extractUsername(telegramUser),
+                    first_name: telegramUser.first_name || null,
+                    last_name: telegramUser.last_name || null,
                     points: CONFIG.POINTS.INITIAL_POINTS,
-                    total_gifts: 0
+                    total_gifts: 0,
+                    created_at: new Date().toISOString(),
+                    last_login: new Date().toISOString()
                 };
+                
+                console.log('Inserting new user data:', newUser);
                 
                 const { data: createdUser, error: createError } = await supabase
                     .from(CONFIG.TABLES.USERS)
@@ -222,7 +266,19 @@ class AuthManager {
                     .select()
                     .single();
                 
-                if (createError) throw createError;
+                if (createError) {
+                    console.error('Error creating user:', createError);
+                    console.error('User data that failed:', newUser);
+                    
+                    // If RLS error, provide more specific guidance
+                    if (createError.code === '42501' || createError.message.includes('RLS') || createError.message.includes('permission')) {
+                        throw new Error('Database permission error: Please check Row Level Security policies in Supabase. Users table needs INSERT policy for anonymous users.');
+                    }
+                    
+                    throw createError;
+                }
+                
+                console.log('User created successfully:', createdUser.username);
                 
                 // Track new user
                 if (window.FanZoneApp) {
@@ -236,6 +292,7 @@ class AuthManager {
             }
             
         } catch (error) {
+            console.error('Full error in createOrUpdateUserDB:', error);
             Utils.logError(error, 'Database user operations');
             throw error;
         }
