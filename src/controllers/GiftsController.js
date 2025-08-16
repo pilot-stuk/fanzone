@@ -333,37 +333,101 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
                 return;
             }
             
-            // Show confirmation
-            const confirmed = confirm(`Purchase ${gift.name} for ${gift.price_points} points?`);
+            // Check if user can afford the gift
+            if (user.points < gift.price_points) {
+                const needed = gift.price_points - user.points;
+                this.showToast(`Not enough points! You need ${needed} more points.`, 'error');
+                return;
+            }
+            
+            // Check if gift is in stock
+            if (gift.current_supply >= gift.max_supply) {
+                this.showToast('This gift is out of stock!', 'error');
+                return;
+            }
+            
+            // Check if user already owns this gift
+            if (this.userGifts.includes(giftId)) {
+                this.showToast('You already own this gift!', 'error');
+                return;
+            }
+            
+            // Show confirmation with haptic feedback
+            const platformAdapter = window.DIContainer.get('platformAdapter');
+            platformAdapter.sendHapticFeedback('light');
+            
+            const confirmed = await platformAdapter.showConfirm(
+                `Purchase ${gift.name} for ${this.formatPoints(gift.price_points)} points?`
+            );
+            
             if (!confirmed) return;
             
             this.setButtonLoading(giftId, true);
             
-            // Purchase through service
-            const result = await this.giftService.purchaseGift(
-                user.telegram_id || user.id, 
-                giftId
-            );
+            // Add timeout for the purchase operation
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Purchase timed out')), 10000);
+            });
+            
+            // Purchase through service with timeout
+            const result = await Promise.race([
+                this.giftService.purchaseGift(user.telegram_id || user.id, giftId),
+                timeoutPromise
+            ]);
             
             if (result.success) {
                 // Update local state
                 this.userGifts.push(giftId);
                 
+                // Update user points locally
+                user.points = (user.points || 0) - gift.price_points;
+                
                 // Emit event for other components
                 this.eventBus.emit('gift:purchased', {
                     giftId: giftId,
-                    giftName: result.gift_name,
-                    pointsSpent: result.price_paid,
+                    giftName: result.gift_name || gift.name,
+                    pointsSpent: result.price_paid || gift.price_points,
                     userId: user.id
                 });
                 
-                this.showToast(`🎉 ${result.gift_name} added to your collection!`, 'success');
+                // Success feedback
+                platformAdapter.sendHapticFeedback('success');
+                this.showToast(`🎉 ${result.gift_name || gift.name} added to your collection!`, 'success');
                 this.renderGifts();
+                
+                // Update gift supply locally
+                gift.current_supply = (gift.current_supply || 0) + 1;
+            } else {
+                // Handle failed purchase
+                throw new Error(result.message || 'Purchase failed');
             }
             
         } catch (error) {
             this.logger.error('Gift purchase failed', error);
-            this.showToast(error.message || 'Purchase failed', 'error');
+            
+            // Enhanced error messages
+            let errorMessage = 'Purchase failed';
+            
+            if (error.message.includes('insufficient points')) {
+                errorMessage = 'Not enough points to purchase this gift';
+            } else if (error.message.includes('out of stock')) {
+                errorMessage = 'This gift is no longer available';
+            } else if (error.message.includes('already owned')) {
+                errorMessage = 'You already own this gift';
+            } else if (error.message.includes('timeout')) {
+                errorMessage = 'Purchase timed out. Please try again.';
+            } else if (error.message.includes('network')) {
+                errorMessage = 'Network error. Please check your connection.';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            this.showToast(errorMessage, 'error');
+            
+            // Error haptic feedback
+            const platformAdapter = window.DIContainer.get('platformAdapter');
+            platformAdapter.sendHapticFeedback('error');
+            
         } finally {
             this.setButtonLoading(giftId, false);
         }

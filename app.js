@@ -50,10 +50,14 @@ class FanZoneApplication {
             this.isInitialized = true;
             
             this.logger.info('Application initialized successfully');
-            this.showToast('Welcome to FanZone! 🎁', 'success');
             
             // Navigate to initial page
             this.navigateToPage(this.currentPage);
+            
+            // Show welcome message after everything is loaded
+            setTimeout(() => {
+                this.showToast('Welcome to FanZone! 🎁', 'success');
+            }, 500);
             
         } catch (error) {
             this.logger?.error('Application initialization failed', error);
@@ -255,8 +259,7 @@ class FanZoneApplication {
             // Setup main button for new users
             if (!user.total_gifts || user.total_gifts === 0) {
                 this.platformAdapter.showMainButton('🎁 Start Collecting!', () => {
-                    this.navigateToPage('gifts');
-                    this.platformAdapter.hideMainButton();
+                    this.handleMainButtonClick();
                 });
             }
         }
@@ -322,17 +325,27 @@ class FanZoneApplication {
     handleMainButtonClick() {
         const user = this.authService.getCurrentUser();
         
+        // Show loading state on main button
+        this.platformAdapter.setMainButtonLoading(true);
+        
         if (!user) {
             // Authenticate first
             this.authService.authenticate().then(() => {
                 this.navigateToPage('gifts');
+                // Hide loading and main button after navigation
+                this.platformAdapter.setMainButtonLoading(false);
+                this.platformAdapter.hideMainButton();
             }).catch(error => {
                 this.logger.error('Authentication failed on main button click', error);
                 this.showToast('Please login to start collecting gifts', 'error');
+                this.platformAdapter.setMainButtonLoading(false);
             });
         } else {
             // Navigate to gifts page
             this.navigateToPage('gifts');
+            // Hide loading and main button after navigation
+            this.platformAdapter.setMainButtonLoading(false);
+            this.platformAdapter.hideMainButton();
         }
     }
     

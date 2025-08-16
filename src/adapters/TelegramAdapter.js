@@ -107,6 +107,11 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
         
         // Main button handler - Fixed to properly handle authentication
         this.webApp.MainButton.onClick(() => {
+            // Prevent multiple clicks while processing
+            if (this.webApp.MainButton.isProgressVisible) {
+                return;
+            }
+            
             if (this.mainButtonCallback) {
                 this.mainButtonCallback();
             } else {
@@ -210,12 +215,13 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
         this.webApp.MainButton.color = this.webApp.themeParams?.button_color || '#3390ec';
         this.webApp.MainButton.textColor = this.webApp.themeParams?.button_text_color || '#ffffff';
         
+        // Ensure button is enabled and not in progress state
+        this.webApp.MainButton.enable();
+        this.webApp.MainButton.hideProgress();
+        
         if (!this.webApp.MainButton.isVisible) {
             this.webApp.MainButton.show();
         }
-        
-        // Show loading state when processing
-        this.webApp.MainButton.showProgress(false);
     }
     
     /**
@@ -224,6 +230,8 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
     hideMainButton() {
         if (!this.webApp) return;
         
+        // Ensure progress is hidden before hiding button
+        this.webApp.MainButton.hideProgress();
         this.webApp.MainButton.hide();
         this.mainButtonCallback = null;
     }

@@ -183,7 +183,7 @@ class ProfileController {
             
             <div class="user-actions">
                 <button class="btn btn-secondary share-btn">📤 Share</button>
-                <button class="btn btn-secondary refresh-btn">🔄 Refresh</button>
+                <button class="btn btn-secondary refresh-btn" id="profile-refresh-btn">🔄 Refresh</button>
             </div>
         `;
     }
@@ -524,8 +524,34 @@ class ProfileController {
      * Refresh profile data
      */
     async refresh() {
-        this.isInitialized = false;
-        await this.initialize();
+        try {
+            this.logger.debug('Refreshing profile data');
+            
+            // Show loading state
+            this.showRefreshingState();
+            
+            // Reset initialization flag
+            this.isInitialized = false;
+            
+            // Reload all data
+            await this.loadProfileData();
+            
+            // Re-render the profile
+            this.renderProfile();
+            
+            // Show success feedback
+            this.showToast('Profile refreshed!', 'success');
+            
+            // Haptic feedback
+            const platformAdapter = window.DIContainer.get('platformAdapter');
+            platformAdapter.sendHapticFeedback('light');
+            
+            this.logger.debug('Profile refreshed successfully');
+            
+        } catch (error) {
+            this.logger.error('Failed to refresh profile', error);
+            this.showToast('Failed to refresh profile', 'error');
+        }
     }
     
     /**
@@ -541,6 +567,25 @@ class ProfileController {
                 </div>
             `;
         }
+    }
+    
+    /**
+     * Show refreshing state
+     */
+    showRefreshingState() {
+        const refreshBtn = document.getElementById('profile-refresh-btn');
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '⏳ Refreshing...';
+        }
+        
+        // Reset button after a delay
+        setTimeout(() => {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '🔄 Refresh';
+            }
+        }, 2000);
     }
     
     /**
