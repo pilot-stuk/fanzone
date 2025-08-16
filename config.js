@@ -8,8 +8,8 @@ const CONFIG = {
     
     // Supabase Configuration (to be filled with actual credentials)
     SUPABASE: {
-        URL: '', // Will be set during Supabase setup
-        ANON_KEY: '', // Will be set during Supabase setup
+        URL: 'https://dsqietzoxyjpslprhglg.supabase.co',
+        ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzcWlldHpveHlqcHNscHJoZ2xnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzMzYwODQsImV4cCI6MjA3MDkxMjA4NH0.BWDR-R2slfTJbrpFvf9JlPmIf3FZRxolIZ7-Wyoqoe8',
     },
     
     // Points System
@@ -68,10 +68,6 @@ const CONFIG = {
         RETRY_DELAY: 1000,
     },
 
-    SUPABASE: {
-        URL: 'https://dsqietzoxyjpslprhglg.supabase.co',
-        ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzcWlldHpveHlqcHNscHJoZ2xnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzMzYwODQsImV4cCI6MjA3MDkxMjA4NH0.BWDR-R2slfTJbrpFvf9JlPmIf3FZRxolIZ7-Wyoqoe8',
-    },
     // Error Messages
     MESSAGES: {
         ERRORS: {
