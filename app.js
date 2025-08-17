@@ -63,6 +63,18 @@ class FanZoneApplication {
             // Setup event handlers
             this.setupEventHandlers();
             
+            // Try to authenticate user first (non-blocking)
+            try {
+                await this.authService.authenticate();
+                this.logger.info('User authenticated during initialization');
+            } catch (authError) {
+                this.logger.info('Initial authentication skipped, user will authenticate on button click');
+                // Ensure button will be shown for unregistered users even if auth fails
+                if (!this.isUserFullyRegistered()) {
+                    this.logger.info('User not registered, will show Start Collecting button');
+                }
+            }
+            
             // Initialize UI
             await this.initializeUI();
             
@@ -74,6 +86,13 @@ class FanZoneApplication {
             this.isInitializing = false;
             
             this.logger.info('Application initialized successfully');
+            
+            // Check registration state to determine initial page
+            if (!this.isUserFullyRegistered()) {
+                // For unregistered users, stay on gifts page but they'll see the lock screen
+                this.currentPage = 'gifts';
+                this.logger.info('User not registered, showing gifts page with registration prompt');
+            }
             
             // Navigate to initial page
             this.navigateToPage(this.currentPage);
@@ -424,36 +443,35 @@ class FanZoneApplication {
      */
     async setupTelegramUI() {
         try {
+            if (!this.platformAdapter.isAvailable()) {
+                this.logger.debug('Platform adapter not available, skipping Telegram UI setup');
+                return;
+            }
+            
+            // Check registration state first
+            const isRegistered = this.isUserFullyRegistered();
+            
+            // Always show button for unregistered users, regardless of auth status
+            if (!isRegistered) {
+                await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
+                    await this.handleMainButtonClick();
+                });
+                this.logger.info('Showing Start Collecting button - user not registered');
+            } else {
+                // Only hide for registered users
+                await this.platformAdapter.hideMainButton();
+                this.logger.info('User already registered, hiding main button');
+            }
+            
             const user = this.authService.getCurrentUser();
             
-            if (this.platformAdapter.isAvailable() && user) {
-                // Check registration state, not total_gifts
-                const isRegistered = this.isUserFullyRegistered();
-                
-                // Only show main button if user hasn't completed registration
-                if (!isRegistered) {
-                    await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
-                        await this.handleMainButtonClick();
-                    });
-                    this.logger.info('Showing Start Collecting button - user not registered');
-                } else {
-                    // Hide button for registered users
-                    await this.platformAdapter.hideMainButton();
-                    this.logger.info('User already registered, hiding main button');
-                }
-                
-                // Log Telegram UI setup
-                this.logger.debug('Telegram UI setup completed', {
-                    isRegistered,
-                    mainButtonShown: !isRegistered,
-                    userId: user.id
-                });
-            } else {
-                this.logger.debug('Telegram UI setup skipped', {
-                    platformAvailable: this.platformAdapter.isAvailable(),
-                    userAvailable: !!user
-                });
-            }
+            // Log Telegram UI setup
+            this.logger.debug('Telegram UI setup completed', {
+                isRegistered,
+                mainButtonShown: !isRegistered,
+                userId: user?.id || 'not_authenticated',
+                hasUser: !!user
+            });
             
         } catch (error) {
             this.logger.error('Failed to setup Telegram UI:', error);
@@ -927,6 +945,19 @@ class FanZoneApplication {
      */
     getRegistrationState() {
         return { ...this.userRegistrationState };
+    }
+    
+    /**
+     * Clear registration state (for testing/debugging)
+     */
+    clearRegistrationState() {
+        this.userRegistrationState = {
+            hasClickedStart: false,
+            isFullyRegistered: false,
+            registrationTimestamp: null
+        };
+        localStorage.removeItem('fanzone_registration_state');
+        this.logger.info('Registration state cleared');
     }
     
     truncateText(text, maxLength) {
