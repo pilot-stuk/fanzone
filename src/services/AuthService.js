@@ -135,9 +135,25 @@ class AuthService extends window.Interfaces.IAuthProvider {
      */
     async createUser(userData) {
         try {
+            // Validate input data
+            if (!userData || !userData.id) {
+                throw new Error('Invalid user data provided');
+            }
+            
+            // Ensure we have valid telegram_id and username
+            const telegramId = parseInt(userData.id);
+            if (isNaN(telegramId) || telegramId <= 0) {
+                throw new Error(`Invalid telegram_id: ${userData.id}`);
+            }
+            
+            const username = this.extractUsername(userData);
+            if (!username || username.trim() === '') {
+                throw new Error('Username cannot be empty');
+            }
+            
             const newUser = {
-                telegram_id: userData.id,
-                username: this.extractUsername(userData),
+                telegram_id: telegramId,
+                username: username,
                 first_name: userData.firstName || userData.first_name || null,
                 last_name: userData.lastName || userData.last_name || null,
                 points: CONFIG.POINTS.INITIAL_POINTS,
@@ -146,7 +162,12 @@ class AuthService extends window.Interfaces.IAuthProvider {
                 last_login: new Date().toISOString()
             };
             
-            this.logger.debug('Creating user with data', newUser);
+            this.logger.debug('Creating user with validated data', { 
+                telegram_id: newUser.telegram_id,
+                username: newUser.username,
+                hasFirstName: !!newUser.first_name,
+                hasLastName: !!newUser.last_name
+            });
             
             // Try RPC function first (if it exists)
             try {
@@ -167,10 +188,17 @@ class AuthService extends window.Interfaces.IAuthProvider {
                 if (result && result.success) {
                     const createdUser = result.user || newUser;
                     
+                    // Validate created user has proper ID
+                    if (!createdUser.id && !createdUser.telegram_id) {
+                        this.logger.warn('Created user missing proper ID fields', { createdUser });
+                        throw new Error('Database user creation returned invalid user object');
+                    }
+                    
                     this.logger.info('User created successfully via RPC function', { 
                         userId: createdUser.telegram_id,
+                        userDbId: createdUser.id,
                         isNew: result.is_new,
-                        created: result.is_new || result.created  // Support both formats
+                        created: result.is_new || result.created
                     });
                     
                     // Track user registration
@@ -187,12 +215,18 @@ class AuthService extends window.Interfaces.IAuthProvider {
                         result,
                         telegram_id: newUser.telegram_id 
                     });
+                    throw new Error(`Database function failed: ${result.error || 'Unknown error'}`);
                 }
             } catch (rpcError) {
                 this.logger.debug('RPC function failed, trying direct insert', { 
                     error: rpcError.message,
                     telegram_id: newUser.telegram_id 
                 });
+                
+                // If RPC failed due to validation, don't try direct insert
+                if (rpcError.message.includes('INVALID_') || rpcError.message.includes('required')) {
+                    throw rpcError;
+                }
             }
             
             // Fallback to direct insert

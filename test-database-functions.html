@@ -345,14 +345,15 @@ ${JSON.stringify(data, null, 2)}`);
             addTestResult('🔍 Verifying database functions exist...');
             
             try {
+                // Test with minimal valid data to check function existence
                 const { data, error } = await supabase.rpc('create_user', {
-                    p_telegram_id: 0,  // This will fail validation but proves function exists
-                    p_username: '',
+                    p_telegram_id: 999999999,  // Valid test ID
+                    p_username: 'test_verify_user',
                     p_first_name: null,
                     p_last_name: null
                 });
                 
-                // If we get here, the function exists
+                // Function exists if we get here without "does not exist" error
                 addTestResult('✅ create_user() function exists');
                 
                 // Test other functions similarly
