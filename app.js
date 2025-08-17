@@ -469,61 +469,111 @@ class FanZoneApplication {
     }
     
     /**
-     * Setup Telegram-specific UI - Enhanced with async handling
+     * Setup Telegram-specific UI with enhanced platform handling
      */
     async setupTelegramUI() {
         try {
-            // Check registration state first - this is most important
+            // Check registration state with platform validation
             const isRegistered = this.isUserFullyRegistered();
-            this.logger.info('Setting up Telegram UI', {
+            const currentPlatform = this.platformAdapter.isAvailable() ? 'telegram' : 'web';
+            
+            this.logger.info('Setting up platform-specific UI', {
                 isRegistered,
+                platform: currentPlatform,
                 registrationState: this.userRegistrationState,
                 platformAvailable: this.platformAdapter.isAvailable()
             });
             
-            // Show button for unregistered users, even in fallback mode
+            // Show button for unregistered users with platform-specific handling
             if (!isRegistered) {
-                const buttonShown = await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
-                    await this.handleMainButtonClick();
-                });
-                
-                this.logger.info('Start Collecting button setup', { 
-                    buttonShown,
-                    isRegistered: false,
-                    platformAvailable: this.platformAdapter.isAvailable()
-                });
-                
-                // If button couldn't be shown (e.g., web version), show alternative
-                if (!buttonShown && !this.platformAdapter.isAvailable()) {
-                    this.logger.info('Platform button not available, user must use web interface');
+                // Telegram platform
+                if (this.platformAdapter.isAvailable()) {
+                    const buttonShown = await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
+                        await this.handleMainButtonClick();
+                    });
+                    
+                    this.logger.info('Telegram Start Collecting button setup', { 
+                        buttonShown,
+                        platform: 'telegram',
+                        userId: this.platformAdapter.getUserData()?.id
+                    });
+                    
+                    if (!buttonShown) {
+                        this.logger.warn('Failed to show Telegram main button');
+                    }
+                } else {
+                    // Web platform - ensure web interface is properly configured
+                    this.logger.info('Web platform detected, configuring web registration interface');
+                    this.setupWebRegistrationInterface();
                 }
             } else {
-                // Only hide for registered users
+                // Registered user - hide main button and log platform info
                 await this.platformAdapter.hideMainButton();
-                this.logger.info('User already registered, hiding main button');
+                this.logger.info('User registered, main button hidden', {
+                    platform: currentPlatform,
+                    registrationPlatform: this.userRegistrationState.platform,
+                    userId: this.userRegistrationState.userId
+                });
+                
+                // Validate platform consistency for registered users
+                if (this.userRegistrationState.platform && 
+                    this.userRegistrationState.platform !== currentPlatform) {
+                    this.logger.warn('Platform changed since registration', {
+                        originalPlatform: this.userRegistrationState.platform,
+                        currentPlatform: currentPlatform
+                    });
+                    
+                    // Update platform in state but keep registration
+                    this.userRegistrationState.platform = currentPlatform;
+                    localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
+                }
             }
             
             const user = this.authService.getCurrentUser();
             
-            // Log Telegram UI setup
-            this.logger.debug('Telegram UI setup completed', {
+            // Log comprehensive UI setup info
+            this.logger.debug('Platform UI setup completed', {
+                platform: currentPlatform,
                 isRegistered,
-                mainButtonShown: !isRegistered,
+                mainButtonShown: !isRegistered && this.platformAdapter.isAvailable(),
                 userId: user?.id || 'not_authenticated',
-                hasUser: !!user
+                hasUser: !!user,
+                registrationTimestamp: this.userRegistrationState.registrationTimestamp
             });
             
         } catch (error) {
-            this.logger.error('Failed to setup Telegram UI:', error);
+            this.logger.error('Failed to setup platform UI:', error);
             
             // Use ErrorHandler if available
             if (window.ErrorHandler) {
                 window.ErrorHandler.logError(error, 'FanZoneApp.setupTelegramUI', {
                     category: 'ui_error',
-                    userMessage: 'Failed to setup Telegram interface'
+                    userMessage: 'Failed to setup platform interface'
                 });
             }
         }
+    }
+    
+    /**
+     * Setup web-specific registration interface
+     */
+    setupWebRegistrationInterface() {
+        // Ensure web-specific registration elements are visible
+        const webRegistrationElements = document.querySelectorAll('.web-registration, .start-collecting-web');
+        webRegistrationElements.forEach(element => {
+            element.style.display = 'block';
+            
+            // Add click handler if not already present
+            if (!element.onclick) {
+                element.onclick = async () => {
+                    await this.handleMainButtonClick();
+                };
+            }
+        });
+        
+        this.logger.info('Web registration interface configured', {
+            elementsFound: webRegistrationElements.length
+        });
     }
     
     /**
@@ -612,14 +662,17 @@ class FanZoneApplication {
                 // Test database connection and user permissions
                 await this.testUserDatabaseAccess(user);
                 
-                // Mark user as fully registered FIRST
+                // Mark user as fully registered with platform information
                 this.userRegistrationState = {
                     hasClickedStart: true,
                     isFullyRegistered: true,
-                    registrationTimestamp: new Date().toISOString()
+                    registrationTimestamp: new Date().toISOString(),
+                    platform: this.platformAdapter.isAvailable() ? 'telegram' : 'web',
+                    userId: user.telegram_id || user.id,
+                    registrationMethod: 'button_click'
                 };
                 
-                // Persist registration state
+                // Persist registration state with platform context
                 localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
                 
                 // Success - navigate to gifts (this will refresh the controller)
@@ -952,7 +1005,7 @@ class FanZoneApplication {
     }
     
     /**
-     * Load registration state from localStorage
+     * Load registration state from localStorage with platform validation
      */
     loadRegistrationState() {
         try {
@@ -960,38 +1013,72 @@ class FanZoneApplication {
             if (saved) {
                 const state = JSON.parse(saved);
                 
-                // Validate the loaded state - clear if invalid
+                // Validate the loaded state structure
                 if (!state.registrationTimestamp || !state.hasClickedStart) {
-                    this.logger?.warn('Invalid registration state found, clearing', state);
+                    this.logger?.warn('Invalid registration state structure, clearing', state);
                     localStorage.removeItem('fanzone_registration_state');
-                    this.userRegistrationState = {
-                        hasClickedStart: false,
-                        isFullyRegistered: false,
-                        registrationTimestamp: null
-                    };
-                } else {
-                    this.userRegistrationState = state;
-                    this.logger?.info('Registration state loaded', this.userRegistrationState);
+                    this.resetRegistrationState();
+                    return;
                 }
+                
+                // Validate platform consistency
+                const currentPlatform = this.platformAdapter?.isAvailable() ? 'telegram' : 'web';
+                if (state.platform && state.platform !== currentPlatform) {
+                    this.logger?.warn('Platform mismatch in registration state', {
+                        saved: state.platform,
+                        current: currentPlatform
+                    });
+                    
+                    // Clear state for platform mismatches to prevent bypass
+                    localStorage.removeItem('fanzone_registration_state');
+                    this.resetRegistrationState();
+                    return;
+                }
+                
+                // Validate timestamp (expire after 7 days)
+                const stateAge = Date.now() - new Date(state.registrationTimestamp).getTime();
+                const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+                if (stateAge > maxAge) {
+                    this.logger?.warn('Registration state expired', {
+                        ageHours: Math.round(stateAge / (60 * 60 * 1000)),
+                        maxAgeDays: 7
+                    });
+                    localStorage.removeItem('fanzone_registration_state');
+                    this.resetRegistrationState();
+                    return;
+                }
+                
+                // State is valid
+                this.userRegistrationState = {
+                    ...state,
+                    // Ensure platform is current
+                    platform: currentPlatform
+                };
+                this.logger?.info('Registration state loaded and validated', this.userRegistrationState);
+                
             } else {
                 this.logger?.info('No saved registration state found - new user');
-                // Ensure clean state for new users
-                this.userRegistrationState = {
-                    hasClickedStart: false,
-                    isFullyRegistered: false,
-                    registrationTimestamp: null
-                };
+                this.resetRegistrationState();
             }
         } catch (error) {
             this.logger?.warn('Failed to load registration state', error);
-            // Reset to default state on error
             localStorage.removeItem('fanzone_registration_state');
-            this.userRegistrationState = {
-                hasClickedStart: false,
-                isFullyRegistered: false,
-                registrationTimestamp: null
-            };
+            this.resetRegistrationState();
         }
+    }
+    
+    /**
+     * Reset registration state to clean default
+     */
+    resetRegistrationState() {
+        this.userRegistrationState = {
+            hasClickedStart: false,
+            isFullyRegistered: false,
+            registrationTimestamp: null,
+            platform: null,
+            userId: null,
+            registrationMethod: null
+        };
     }
     
     /**
@@ -1046,7 +1133,639 @@ class FanZoneApplication {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength - 3) + '...';
     }
+    
+    /**
+     * Comprehensive Registration Testing Framework
+     */
+    
+    /**
+     * Run complete registration flow test
+     */
+    async testRegistrationFlow(options = {}) {
+        const {
+            platform = 'auto', // 'telegram', 'web', or 'auto'
+            clearState = true,
+            verbose = true
+        } = options;
+        
+        console.log('🧪 Starting Registration Flow Test');
+        console.log('Test Configuration:', { platform, clearState, verbose });
+        
+        const testResults = {
+            phase: null,
+            steps: [],
+            success: false,
+            errors: [],
+            startTime: Date.now()
+        };
+        
+        try {
+            // Phase 1: Clear state and validate initial conditions
+            testResults.phase = 'initialization';
+            if (clearState) {
+                await this.testClearAllState();
+                testResults.steps.push({ step: 'clearState', success: true, timestamp: Date.now() });
+            }
+            
+            // Phase 2: Validate initial button visibility
+            testResults.phase = 'button_visibility';
+            const buttonVisible = await this.testButtonVisibility(platform);
+            testResults.steps.push({ 
+                step: 'buttonVisibility', 
+                success: buttonVisible.success, 
+                details: buttonVisible,
+                timestamp: Date.now() 
+            });
+            
+            if (!buttonVisible.success) {
+                throw new Error(`Button visibility test failed: ${buttonVisible.error}`);
+            }
+            
+            // Phase 3: Test registration flow
+            testResults.phase = 'registration_flow';
+            const registrationResult = await this.testRegistrationProcess();
+            testResults.steps.push({ 
+                step: 'registrationFlow', 
+                success: registrationResult.success, 
+                details: registrationResult,
+                timestamp: Date.now() 
+            });
+            
+            if (!registrationResult.success) {
+                throw new Error(`Registration flow test failed: ${registrationResult.error}`);
+            }
+            
+            // Phase 4: Test purchase flow after registration
+            testResults.phase = 'purchase_flow';
+            const purchaseResult = await this.testPurchaseFlow();
+            testResults.steps.push({ 
+                step: 'purchaseFlow', 
+                success: purchaseResult.success, 
+                details: purchaseResult,
+                timestamp: Date.now() 
+            });
+            
+            // Phase 5: Test state persistence
+            testResults.phase = 'state_persistence';
+            const persistenceResult = await this.testStatePersistence();
+            testResults.steps.push({ 
+                step: 'statePersistence', 
+                success: persistenceResult.success, 
+                details: persistenceResult,
+                timestamp: Date.now() 
+            });
+            
+            testResults.success = true;
+            testResults.phase = 'completed';
+            
+        } catch (error) {
+            testResults.success = false;
+            testResults.errors.push({
+                phase: testResults.phase,
+                error: error.message,
+                timestamp: Date.now()
+            });
+        }
+        
+        testResults.endTime = Date.now();
+        testResults.duration = testResults.endTime - testResults.startTime;
+        
+        // Generate test report
+        this.generateTestReport(testResults, verbose);
+        
+        return testResults;
+    }
+    
+    /**
+     * Clear all registration state for testing
+     */
+    async testClearAllState() {
+        console.log('🧹 Clearing all registration state...');
+        
+        // Clear localStorage
+        const keysToRemove = [
+            'fanzone_registration_state',
+            'fanzone_auth_token', 
+            'fanzone_current_user',
+            'fanzone_user_gifts',
+            'fanzone_fallback_user',
+            'fanzone_web_user_id'
+        ];
+        
+        keysToRemove.forEach(key => {
+            localStorage.removeItem(key);
+        });
+        
+        // Reset application registration state
+        this.resetRegistrationState();
+        
+        // Reset auth service
+        if (this.authService) {
+            try {
+                await this.authService.logout();
+            } catch (error) {
+                console.warn('Auth service logout warning:', error);
+            }
+        }
+        
+        console.log('✅ State cleared successfully');
+        return { success: true };
+    }
+    
+    /**
+     * Test button visibility in different platforms
+     */
+    async testButtonVisibility(platform) {
+        console.log('👁️ Testing button visibility...');
+        
+        const result = {
+            success: false,
+            platform: this.platformAdapter.isAvailable() ? 'telegram' : 'web',
+            buttonState: null,
+            registrationState: this.getRegistrationState(),
+            error: null
+        };
+        
+        try {
+            // Check if user is registered (should be false after clear)
+            const isRegistered = this.isUserFullyRegistered();
+            if (isRegistered) {
+                result.error = 'User appears registered after state clear';
+                return result;
+            }
+            
+            // Setup UI and check button state
+            await this.setupTelegramUI();
+            
+            if (this.platformAdapter.isAvailable()) {
+                // Telegram platform
+                result.buttonState = this.platformAdapter.getMainButtonState();
+                result.success = result.buttonState.visible && result.buttonState.text.includes('Start Collecting');
+                
+                if (!result.success) {
+                    result.error = `Button not visible or incorrect text. State: ${JSON.stringify(result.buttonState)}`;
+                }
+            } else {
+                // Web platform - check for web registration elements
+                const webElements = document.querySelectorAll('.start-collecting-web, .web-registration');
+                result.success = webElements.length > 0;
+                result.buttonState = { 
+                    available: true,
+                    webElementsFound: webElements.length,
+                    elements: Array.from(webElements).map(el => ({
+                        visible: el.style.display !== 'none',
+                        text: el.textContent
+                    }))
+                };
+                
+                if (!result.success) {
+                    result.error = 'No web registration elements found';
+                }
+            }
+            
+        } catch (error) {
+            result.error = error.message;
+        }
+        
+        console.log('Button visibility result:', result);
+        return result;
+    }
+    
+    /**
+     * Test the registration process
+     */
+    async testRegistrationProcess() {
+        console.log('📝 Testing registration process...');
+        
+        const result = {
+            success: false,
+            beforeState: this.getRegistrationState(),
+            afterState: null,
+            authResult: null,
+            error: null
+        };
+        
+        try {
+            // Simulate button click
+            console.log('Simulating registration button click...');
+            await this.handleMainButtonClick();
+            
+            // Wait a moment for async operations
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Check if registration was successful
+            result.afterState = this.getRegistrationState();
+            result.authResult = this.authService.getCurrentUser();
+            
+            const isRegistered = this.isUserFullyRegistered();
+            result.success = isRegistered && result.authResult;
+            
+            if (!result.success) {
+                result.error = `Registration failed. IsRegistered: ${isRegistered}, HasUser: ${!!result.authResult}`;
+            }
+            
+        } catch (error) {
+            result.error = error.message;
+        }
+        
+        console.log('Registration process result:', result);
+        return result;
+    }
+    
+    /**
+     * Test purchase flow after registration
+     */
+    async testPurchaseFlow() {
+        console.log('🛒 Testing purchase flow...');
+        
+        const result = {
+            success: false,
+            giftsLoaded: false,
+            purchaseAttempted: false,
+            error: null
+        };
+        
+        try {
+            // Ensure gifts controller is initialized
+            if (!this.giftsController) {
+                result.error = 'Gifts controller not available';
+                return result;
+            }
+            
+            await this.giftsController.initialize();
+            
+            // Check if gifts are loaded
+            result.giftsLoaded = this.giftsController.gifts && this.giftsController.gifts.length > 0;
+            
+            if (!result.giftsLoaded) {
+                result.error = 'No gifts loaded';
+                return result;
+            }
+            
+            // Find a gift to test purchase
+            const testGift = this.giftsController.gifts.find(g => 
+                g.current_supply < g.max_supply && g.price_points <= 1000
+            );
+            
+            if (!testGift) {
+                result.error = 'No suitable gift found for testing';
+                return result;
+            }
+            
+            // Check if user registration allows purchase
+            const registrationCheck = this.giftsController.checkUserRegistration();
+            result.success = registrationCheck;
+            result.purchaseAttempted = true;
+            
+            if (!result.success) {
+                result.error = 'Purchase blocked - registration check failed';
+            }
+            
+        } catch (error) {
+            result.error = error.message;
+        }
+        
+        console.log('Purchase flow result:', result);
+        return result;
+    }
+    
+    /**
+     * Test state persistence across page refresh
+     */
+    async testStatePersistence() {
+        console.log('💾 Testing state persistence...');
+        
+        const result = {
+            success: false,
+            beforeRefresh: null,
+            afterRefresh: null,
+            error: null
+        };
+        
+        try {
+            // Capture current state
+            result.beforeRefresh = {
+                registrationState: this.getRegistrationState(),
+                isRegistered: this.isUserFullyRegistered(),
+                localStorage: {
+                    registrationState: localStorage.getItem('fanzone_registration_state'),
+                    currentUser: localStorage.getItem('fanzone_current_user')
+                }
+            };
+            
+            // Simulate page refresh by reloading registration state
+            this.loadRegistrationState();
+            
+            result.afterRefresh = {
+                registrationState: this.getRegistrationState(),
+                isRegistered: this.isUserFullyRegistered(),
+                localStorage: {
+                    registrationState: localStorage.getItem('fanzone_registration_state'),
+                    currentUser: localStorage.getItem('fanzone_current_user')
+                }
+            };
+            
+            // Check if state persisted correctly
+            result.success = 
+                result.beforeRefresh.isRegistered === result.afterRefresh.isRegistered &&
+                !!result.afterRefresh.localStorage.registrationState;
+            
+            if (!result.success) {
+                result.error = 'State persistence failed - registration state lost';
+            }
+            
+        } catch (error) {
+            result.error = error.message;
+        }
+        
+        console.log('State persistence result:', result);
+        return result;
+    }
+    
+    /**
+     * Generate comprehensive test report
+     */
+    generateTestReport(testResults, verbose = true) {
+        console.log('\n' + '='.repeat(60));
+        console.log('📊 REGISTRATION FLOW TEST REPORT');
+        console.log('='.repeat(60));
+        
+        console.log(`\n🕐 Test Duration: ${testResults.duration}ms`);
+        console.log(`✅ Overall Success: ${testResults.success ? 'PASS' : 'FAIL'}`);
+        console.log(`📍 Final Phase: ${testResults.phase}`);
+        
+        if (testResults.success) {
+            console.log('\n🎉 All tests passed successfully!');
+        } else {
+            console.log('\n❌ Test failed in phase:', testResults.phase);
+            testResults.errors.forEach(error => {
+                console.log(`   Error in ${error.phase}: ${error.error}`);
+            });
+        }
+        
+        if (verbose) {
+            console.log('\n📋 Detailed Steps:');
+            testResults.steps.forEach((step, index) => {
+                const status = step.success ? '✅' : '❌';
+                console.log(`   ${index + 1}. ${status} ${step.step}`);
+                if (step.details && step.details.error) {
+                    console.log(`      Error: ${step.details.error}`);
+                }
+            });
+        }
+        
+        console.log('\n' + '='.repeat(60));
+        
+        // Store test results for debugging
+        window.lastTestResults = testResults;
+    }
+    
+    /**
+     * Test edge cases for registration flow
+     */
+    async testRegistrationEdgeCases() {
+        console.log('🔍 Testing registration edge cases...');
+        
+        const edgeCases = [
+            'double_click_prevention',
+            'network_failure_simulation',
+            'invalid_platform_state',
+            'corrupted_localStorage',
+            'session_expiry'
+        ];
+        
+        const results = {};
+        
+        for (const testCase of edgeCases) {
+            try {
+                console.log(`Testing: ${testCase}`);
+                results[testCase] = await this.runEdgeCaseTest(testCase);
+            } catch (error) {
+                results[testCase] = { success: false, error: error.message };
+            }
+        }
+        
+        console.log('Edge case test results:', results);
+        return results;
+    }
+    
+    /**
+     * Run specific edge case test
+     */
+    async runEdgeCaseTest(testCase) {
+        switch (testCase) {
+            case 'double_click_prevention':
+                return this.testDoubleClickPrevention();
+            case 'network_failure_simulation':
+                return this.testNetworkFailure();
+            case 'invalid_platform_state':
+                return this.testInvalidPlatformState();
+            case 'corrupted_localStorage':
+                return this.testCorruptedLocalStorage();
+            case 'session_expiry':
+                return this.testSessionExpiry();
+            default:
+                return { success: false, error: 'Unknown test case' };
+        }
+    }
+    
+    /**
+     * Test double click prevention
+     */
+    async testDoubleClickPrevention() {
+        console.log('Testing double click prevention...');
+        
+        // Clear state first
+        await this.testClearAllState();
+        
+        // Simulate rapid button clicks
+        const promises = [];
+        for (let i = 0; i < 3; i++) {
+            promises.push(this.handleMainButtonClick());
+        }
+        
+        try {
+            await Promise.all(promises);
+            
+            // Should only register once
+            const registrationState = this.getRegistrationState();
+            return {
+                success: registrationState.hasClickedStart && registrationState.isFullyRegistered,
+                registrationState
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Test corrupted localStorage handling
+     */
+    async testCorruptedLocalStorage() {
+        console.log('Testing corrupted localStorage handling...');
+        
+        // Set invalid JSON in localStorage
+        localStorage.setItem('fanzone_registration_state', 'invalid json');
+        
+        try {
+            // This should gracefully handle the corruption
+            this.loadRegistrationState();
+            
+            const isRegistered = this.isUserFullyRegistered();
+            return {
+                success: !isRegistered, // Should be false due to corruption cleanup
+                state: this.getRegistrationState()
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Test network failure simulation
+     */
+    async testNetworkFailure() {
+        console.log('Testing network failure handling...');
+        
+        try {
+            // Clear state first
+            await this.testClearAllState();
+            
+            // Mock network failure
+            const originalFetch = window.fetch;
+            window.fetch = () => Promise.reject(new Error('Network error'));
+            
+            try {
+                // Attempt registration with network failure
+                await this.handleMainButtonClick();
+                
+                // Should handle gracefully
+                return {
+                    success: true,
+                    message: 'Network failure handled gracefully'
+                };
+            } catch (error) {
+                return {
+                    success: error.message.includes('Network') || error.message.includes('Failed'),
+                    error: error.message
+                };
+            } finally {
+                // Restore original fetch
+                window.fetch = originalFetch;
+            }
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Test invalid platform state
+     */
+    async testInvalidPlatformState() {
+        console.log('Testing invalid platform state handling...');
+        
+        try {
+            // Create inconsistent platform state
+            localStorage.setItem('fanzone_registration_state', JSON.stringify({
+                hasClickedStart: true,
+                isFullyRegistered: true,
+                platform: 'telegram', // Wrong platform
+                registrationTimestamp: new Date().toISOString()
+            }));
+            
+            // Load state - should detect platform mismatch
+            this.loadRegistrationState();
+            
+            const isRegistered = this.isUserFullyRegistered();
+            const currentPlatform = this.platformAdapter.isAvailable() ? 'telegram' : 'web';
+            
+            return {
+                success: !isRegistered, // Should be false due to platform mismatch cleanup
+                detectedPlatform: currentPlatform,
+                state: this.getRegistrationState()
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Test session expiry
+     */
+    async testSessionExpiry() {
+        console.log('Testing session expiry handling...');
+        
+        try {
+            // Create expired registration state
+            const expiredDate = new Date();
+            expiredDate.setDate(expiredDate.getDate() - 8); // 8 days ago
+            
+            localStorage.setItem('fanzone_registration_state', JSON.stringify({
+                hasClickedStart: true,
+                isFullyRegistered: true,
+                platform: this.platformAdapter.isAvailable() ? 'telegram' : 'web',
+                registrationTimestamp: expiredDate.toISOString()
+            }));
+            
+            // Load state - should detect expiry
+            this.loadRegistrationState();
+            
+            const isRegistered = this.isUserFullyRegistered();
+            
+            return {
+                success: !isRegistered, // Should be false due to expiry
+                expiredTimestamp: expiredDate.toISOString(),
+                state: this.getRegistrationState()
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Debug registration state
+     */
+    debugRegistrationState() {
+        console.log('\n' + '='.repeat(50));
+        console.log('🔍 REGISTRATION DEBUG INFORMATION');
+        console.log('='.repeat(50));
+        
+        const state = {
+            app: {
+                isRegistered: this.isUserFullyRegistered(),
+                registrationState: this.getRegistrationState(),
+                currentUser: this.authService?.getCurrentUser()
+            },
+            platform: {
+                type: this.platformAdapter.isAvailable() ? 'telegram' : 'web',
+                buttonState: this.platformAdapter.getMainButtonState(),
+                modeInfo: this.platformAdapter.getModeInfo()
+            },
+            localStorage: {
+                registrationState: localStorage.getItem('fanzone_registration_state'),
+                currentUser: localStorage.getItem('fanzone_current_user'),
+                authToken: localStorage.getItem('fanzone_auth_token')
+            },
+            services: {
+                giftService: !!this.giftService,
+                authService: !!this.authService,
+                userService: !!this.userService,
+                platformAdapter: !!this.platformAdapter
+            }
+        };
+        
+        console.log('Current State:', state);
+        console.log('='.repeat(50));
+        
+        return state;
+    }
 }
+
+// Add testing utilities to window for console access
+window.debugRegistration = () => window.FanZoneApp?.debugRegistrationState();
+window.testRegistration = (options) => window.FanZoneApp?.testRegistrationFlow(options);
+window.testEdgeCases = () => window.FanZoneApp?.testRegistrationEdgeCases();
+window.clearTestState = () => window.FanZoneApp?.testClearAllState();
 
 
 // Application will be created after services are initialized

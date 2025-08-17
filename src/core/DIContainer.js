@@ -466,18 +466,8 @@ class DIContainer {
         logger.info('Initializing authentication...');
         const authService = this.get('authService');
         
-        // Try to load stored auth first
-        const hasStoredAuth = authService.loadStoredAuth();
-        
-        if (!hasStoredAuth) {
-            // Authenticate with Telegram data
-            try {
-                await authService.authenticate();
-            } catch (error) {
-                logger.error('Authentication failed', error);
-                throw new Error('Failed to authenticate user');
-            }
-        }
+        // Only load existing stored auth - no automatic user creation
+        authService.loadStoredAuth();
     }
     
     /**

@@ -333,20 +333,39 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
     }
     
     /**
-     * Create fallback user for development/testing
+     * Create fallback user for development/testing with platform consistency
      */
     createFallbackUser() {
+        // Check if we have a persistent ID in localStorage
+        let persistentId = localStorage.getItem('fanzone_web_user_id');
+        if (!persistentId) {
+            persistentId = Date.now();
+            localStorage.setItem('fanzone_web_user_id', persistentId.toString());
+        }
+        
         this.userData = {
-            id: Date.now(),
+            id: parseInt(persistentId),
             first_name: 'Guest',
             last_name: 'User',
-            username: `guest_${Date.now()}`,
-            language_code: 'en'
+            username: `web_user_${persistentId}`,
+            language_code: 'en',
+            is_fallback: true,
+            platform: 'web'
         };
         
-        // Save fallback user for persistence
-        localStorage.setItem('fanzone_fallback_user', JSON.stringify(this.userData));
-        console.log('👤 Created fallback user:', this.userData.username);
+        // Save fallback user for persistence with platform info
+        const userData = {
+            ...this.userData,
+            created_at: new Date().toISOString(),
+            platform: 'web'
+        };
+        localStorage.setItem('fanzone_fallback_user', JSON.stringify(userData));
+        
+        console.log('👤 Created platform-consistent fallback user:', {
+            username: this.userData.username,
+            id: this.userData.id,
+            platform: 'web'
+        });
     }
     
     /**
@@ -373,12 +392,14 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
             window.EventBus?.emit('navigation:back');
         });
         
-        // Main button handler - Fixed to properly handle authentication
+        // Main button handler - Enhanced with platform-specific validation
         this.webApp.MainButton.onClick(() => {
             console.log('🔘 Main button clicked', {
                 hasCallback: !!this.mainButtonCallback,
                 isProgressVisible: this.webApp.MainButton.isProgressVisible,
-                buttonText: this.webApp.MainButton.text
+                buttonText: this.webApp.MainButton.text,
+                platform: 'telegram',
+                userId: this.userData?.id
             });
             
             // Prevent multiple clicks while processing
@@ -387,13 +408,29 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
                 return;
             }
             
+            // Validate platform state before proceeding
+            if (!this.validatePlatformState()) {
+                console.error('❌ Platform state validation failed');
+                return;
+            }
+            
             if (this.mainButtonCallback) {
-                console.log('🚀 Executing main button callback');
-                this.mainButtonCallback();
+                console.log('🚀 Executing main button callback with platform validation');
+                // Execute callback with platform context
+                try {
+                    this.mainButtonCallback();
+                } catch (error) {
+                    console.error('Main button callback failed:', error);
+                    this.webApp.MainButton.hideProgress();
+                }
             } else {
-                console.log('📡 No callback set, emitting default event');
-                // Default action - ensure user is authenticated first
-                window.EventBus?.emit('mainbutton:clicked');
+                console.log('📡 No callback set, emitting default event with platform data');
+                // Default action with platform context
+                window.EventBus?.emit('mainbutton:clicked', {
+                    platform: 'telegram',
+                    userData: this.userData,
+                    timestamp: Date.now()
+                });
             }
         });
         
@@ -763,6 +800,56 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
      */
     isAvailable() {
         return !!(this.webApp && window.Telegram && window.Telegram.WebApp);
+    }
+    
+    /**
+     * Validate platform state before critical operations
+     */
+    validatePlatformState() {
+        try {
+            // Check basic initialization
+            if (!this.isInitialized) {
+                console.error('TelegramAdapter not initialized');
+                return false;
+            }
+            
+            // Validate user data consistency
+            if (this.isAvailable()) {
+                if (!this.userData || !this.userData.id) {
+                    console.error('Missing Telegram user data');
+                    return false;
+                }
+                
+                // Cross-check with WebApp data
+                const webAppUser = this.webApp.initDataUnsafe?.user;
+                if (webAppUser && webAppUser.id !== this.userData.id) {
+                    console.error('User data mismatch between adapter and WebApp');
+                    return false;
+                }
+                
+                // Check registration state consistency
+                const registrationState = localStorage.getItem('fanzone_registration_state');
+                if (registrationState) {
+                    try {
+                        const state = JSON.parse(registrationState);
+                        if (state.platform && state.platform !== 'telegram') {
+                            console.warn('Platform mismatch in registration state');
+                            // Clear inconsistent state
+                            localStorage.removeItem('fanzone_registration_state');
+                        }
+                    } catch (error) {
+                        console.warn('Invalid registration state in localStorage:', error);
+                        localStorage.removeItem('fanzone_registration_state');
+                    }
+                }
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Platform state validation failed:', error);
+            return false;
+        }
     }
     
     /**

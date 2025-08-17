@@ -217,6 +217,16 @@ class GiftService extends window.Interfaces.IGiftService {
      */
     async getUserGifts(userId) {
         try {
+            // Validate registration before allowing access to user gifts
+            const registrationState = this.checkUserRegistrationState();
+            if (!registrationState.isRegistered) {
+                this.logger.info('getUserGifts blocked - user not registered', {
+                    userId,
+                    registrationState
+                });
+                throw new Error('Please click "Start Collecting" to access your gift collection');
+            }
+            
             const user = await this.userService.getUserProfile(userId);
             
             if (!user) {
@@ -265,12 +275,18 @@ class GiftService extends window.Interfaces.IGiftService {
                     error: dbError.message
                 });
                 
-                // Fallback to local storage
+                // Fallback to local storage only if registered
                 return this.getLocalUserGifts(userId);
             }
             
         } catch (error) {
             this.logger.error('Failed to get user gifts', error, { userId });
+            
+            // Check if this is a registration error
+            if (error.message.includes('Start Collecting')) {
+                throw error; // Re-throw registration errors
+            }
+            
             return [];
         }
     }
@@ -316,7 +332,11 @@ class GiftService extends window.Interfaces.IGiftService {
             ]);
             
             if (!user) {
-                return { valid: false, message: 'User not found' };
+                return { 
+                    valid: false, 
+                    message: 'User not found',
+                    error: this.createValidationError('USER_NOT_FOUND', 'User not found', { userId })
+                };
             }
             
             // Check if user has completed registration process
@@ -326,15 +346,35 @@ class GiftService extends window.Interfaces.IGiftService {
                     userId,
                     registrationState
                 });
+                
+                // Provide specific error messages based on validation failure
+                let message = 'Please click "Start Collecting" to enable gift purchases';
+                
+                if (registrationState.source === 'error') {
+                    message = 'Registration verification failed. Please restart the app and click "Start Collecting"';
+                } else if (registrationState.validationResults) {
+                    const failedValidations = registrationState.validationResults.filter(v => !v.isRegistered);
+                    if (failedValidations.some(v => v.reason === 'expired')) {
+                        message = 'Your registration has expired. Please click "Start Collecting" again';
+                    } else if (failedValidations.some(v => v.reason === 'missing_telegram_id')) {
+                        message = 'Platform verification failed. Please restart the app and click "Start Collecting"';
+                    }
+                }
+                
                 return { 
                     valid: false, 
-                    message: 'Please click "Start Collecting" to enable gift purchases',
-                    requiresRegistration: true
+                    message,
+                    requiresRegistration: true,
+                    registrationState
                 };
             }
             
             if (!gift) {
-                return { valid: false, message: 'Gift not found' };
+                return { 
+                    valid: false, 
+                    message: 'Gift not found',
+                    error: this.createValidationError('GIFT_NOT_FOUND', 'Gift not found', { giftId })
+                };
             }
             
             // Check if already owned
@@ -343,12 +383,24 @@ class GiftService extends window.Interfaces.IGiftService {
             );
             
             if (alreadyOwned) {
-                return { valid: false, message: 'You already own this gift' };
+                return { 
+                    valid: false, 
+                    message: 'You already own this gift',
+                    error: this.createValidationError('ALREADY_OWNED', 'You already own this gift', { 
+                        userId, giftId, giftName: gift.name 
+                    })
+                };
             }
             
             // Check stock
             if (gift.current_supply >= gift.max_supply) {
-                return { valid: false, message: 'Gift is out of stock' };
+                return { 
+                    valid: false, 
+                    message: 'Gift is out of stock',
+                    error: this.createValidationError('OUT_OF_STOCK', 'Gift is out of stock', { 
+                        giftId, giftName: gift.name, currentSupply: gift.current_supply, maxSupply: gift.max_supply 
+                    })
+                };
             }
             
             // Check points
@@ -356,7 +408,10 @@ class GiftService extends window.Interfaces.IGiftService {
                 const needed = gift.price_points - user.points;
                 return { 
                     valid: false, 
-                    message: `You need ${needed} more points` 
+                    message: `You need ${needed} more points`,
+                    error: this.createValidationError('INSUFFICIENT_POINTS', `You need ${needed} more points`, { 
+                        userId, giftId, giftName: gift.name, userPoints: user.points, giftPrice: gift.price_points, needed 
+                    })
                 };
             }
             
@@ -364,12 +419,18 @@ class GiftService extends window.Interfaces.IGiftService {
             
         } catch (error) {
             this.logger.error('Failed to validate purchase', error, { userId, giftId });
-            return { valid: false, message: 'Validation failed' };
+            return { 
+                valid: false, 
+                message: 'Validation failed',
+                error: this.createValidationError('VALIDATION_FAILED', 'Purchase validation failed', { 
+                    userId, giftId, originalError: error.message 
+                })
+            };
         }
     }
     
     /**
-     * Check user registration state to prevent purchase bypass
+     * Check user registration state to prevent purchase bypass with multiple validation layers
      */
     checkUserRegistrationState() {
         try {
@@ -377,60 +438,236 @@ class GiftService extends window.Interfaces.IGiftService {
                 hasWindow: typeof window !== 'undefined',
                 hasFanZoneApp: !!(window.FanZoneApp),
                 hasIsUserFullyRegistered: !!(window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered),
-                localStorageState: localStorage.getItem('fanzone_registration_state')
+                localStorageState: localStorage.getItem('fanzone_registration_state'),
+                timestamp: Date.now()
             };
             
-            // Try to get registration state from global app instance
-            if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
-                const isRegistered = window.FanZoneApp.isUserFullyRegistered();
-                this.logger.debug('Registration check via app instance', { isRegistered, debug });
-                return { isRegistered, source: 'app_instance' };
+            // Comprehensive validation layers
+            const validations = [
+                this.checkAppInstanceRegistration(),
+                this.checkLocalStorageRegistration(),
+                this.checkTimestampValidation(),
+                this.checkPlatformConsistency()
+            ];
+            
+            // Get most restrictive result (all must pass for registration to be valid)
+            const results = validations.filter(v => v !== null);
+            const allValid = results.every(v => v.isRegistered);
+            const anyInvalid = results.some(v => !v.isRegistered);
+            
+            const finalResult = {
+                isRegistered: allValid && !anyInvalid && results.length > 0,
+                source: 'comprehensive',
+                validationResults: results,
+                debug
+            };
+            
+            this.logger.debug('Comprehensive registration validation', finalResult);
+            
+            // Log security-relevant events
+            if (finalResult.isRegistered !== results[0]?.isRegistered) {
+                this.logger.warn('Registration validation mismatch detected', {
+                    finalResult: finalResult.isRegistered,
+                    appInstance: results[0]?.isRegistered,
+                    validationResults: results
+                });
             }
             
-            // Fallback to localStorage check
-            const saved = localStorage.getItem('fanzone_registration_state');
-            if (saved) {
-                const state = JSON.parse(saved);
-                const isRegistered = state.hasClickedStart && state.isFullyRegistered;
-                this.logger.debug('Registration check via localStorage', { isRegistered, state, debug });
-                return { isRegistered, source: 'localStorage' };
-            }
-            
-            // Default to not registered
-            this.logger.debug('Registration check defaulted to false', { debug });
-            return { isRegistered: false, source: 'default' };
+            return finalResult;
             
         } catch (error) {
             this.logger.warn('Failed to check registration state', error);
-            return { isRegistered: false, source: 'error' };
+            return { isRegistered: false, source: 'error', error: error.message };
         }
     }
     
     /**
-     * Transform purchase error for user display
+     * Check app instance registration
+     */
+    checkAppInstanceRegistration() {
+        if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
+            const isRegistered = window.FanZoneApp.isUserFullyRegistered();
+            return { isRegistered, method: 'app_instance' };
+        }
+        return null;
+    }
+    
+    /**
+     * Check localStorage registration state
+     */
+    checkLocalStorageRegistration() {
+        try {
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                const isRegistered = state.hasClickedStart && state.isFullyRegistered;
+                return { 
+                    isRegistered, 
+                    method: 'localStorage',
+                    state: {
+                        hasClickedStart: state.hasClickedStart,
+                        isFullyRegistered: state.isFullyRegistered,
+                        timestamp: state.timestamp
+                    }
+                };
+            }
+        } catch (error) {
+            this.logger.warn('Failed to parse localStorage registration state', error);
+        }
+        return { isRegistered: false, method: 'localStorage' };
+    }
+    
+    /**
+     * Validate registration timestamp to prevent stale states
+     */
+    checkTimestampValidation() {
+        try {
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                const now = Date.now();
+                const stateAge = now - (state.timestamp || 0);
+                const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+                
+                if (stateAge > maxAge) {
+                    this.logger.warn('Registration state is too old', { 
+                        ageHours: Math.round(stateAge / (60 * 60 * 1000)),
+                        maxAgeHours: 24 
+                    });
+                    return { isRegistered: false, method: 'timestamp', reason: 'expired' };
+                }
+                
+                return { isRegistered: true, method: 'timestamp', ageHours: Math.round(stateAge / (60 * 60 * 1000)) };
+            }
+        } catch (error) {
+            this.logger.warn('Failed to validate registration timestamp', error);
+        }
+        return { isRegistered: false, method: 'timestamp' };
+    }
+    
+    /**
+     * Check platform consistency
+     */
+    checkPlatformConsistency() {
+        try {
+            const platformAdapter = window.DIContainer?.get('platformAdapter');
+            const authService = window.DIContainer?.get('authService');
+            
+            if (platformAdapter && authService) {
+                const currentUser = authService.getCurrentUser();
+                const isInTelegram = platformAdapter.isAvailable();
+                
+                // In Telegram, user must have telegram_id
+                if (isInTelegram && currentUser && !currentUser.telegram_id) {
+                    this.logger.warn('Platform inconsistency: in Telegram but no telegram_id', {
+                        hasUser: !!currentUser,
+                        hasTelegramId: !!currentUser?.telegram_id
+                    });
+                    return { isRegistered: false, method: 'platform_consistency', reason: 'missing_telegram_id' };
+                }
+                
+                return { isRegistered: true, method: 'platform_consistency' };
+            }
+        } catch (error) {
+            this.logger.warn('Failed to check platform consistency', error);
+        }
+        return { isRegistered: false, method: 'platform_consistency' };
+    }
+    
+    /**
+     * Transform purchase error for user display with enhanced error information
      */
     transformPurchaseError(error) {
         const errorMap = {
-            'INSUFFICIENT_POINTS': 'Not enough points for this gift',
-            'OUT_OF_STOCK': 'This gift is out of stock',
-            'ALREADY_OWNED': 'You already own this gift',
-            'USER_NOT_FOUND': 'User not found. Please login again',
-            'GIFT_NOT_FOUND': 'Gift not found'
+            'INSUFFICIENT_POINTS': {
+                message: 'Not enough points for this gift',
+                type: 'INSUFFICIENT_POINTS',
+                category: 'user_error'
+            },
+            'OUT_OF_STOCK': {
+                message: 'This gift is out of stock',
+                type: 'OUT_OF_STOCK',
+                category: 'availability_error'
+            },
+            'ALREADY_OWNED': {
+                message: 'You already own this gift',
+                type: 'ALREADY_OWNED',
+                category: 'user_error'
+            },
+            'USER_NOT_FOUND': {
+                message: 'User not found. Please login again',
+                type: 'USER_NOT_FOUND',
+                category: 'auth_error'
+            },
+            'GIFT_NOT_FOUND': {
+                message: 'Gift not found',
+                type: 'GIFT_NOT_FOUND',
+                category: 'data_error'
+            },
+            'DATABASE_ERROR': {
+                message: 'Database connection failed',
+                type: 'DATABASE_ERROR',
+                category: 'system_error'
+            },
+            'PERMISSION_DENIED': {
+                message: 'Permission denied',
+                type: 'PERMISSION_ERROR',
+                category: 'auth_error'
+            }
         };
         
-        // Check for known error codes
-        for (const [code, message] of Object.entries(errorMap)) {
+        // Check for known error codes first
+        for (const [code, errorInfo] of Object.entries(errorMap)) {
             if (error.message?.includes(code) || error.code === code) {
-                const userError = new Error(message);
-                userError.code = code;
+                const userError = new Error(errorInfo.message);
+                userError.code = errorInfo.type;
+                userError.category = errorInfo.category;
+                userError.originalError = error;
                 return userError;
             }
         }
         
-        // Generic error
-        const userError = new Error('Purchase failed. Please try again.');
+        // Check for registration-related errors
+        if (error.message?.includes('Start Collecting') || 
+            error.message?.includes('registration') ||
+            error.message?.includes('not registered')) {
+            const userError = new Error('Please click "Start Collecting" to enable gift purchases');
+            userError.code = 'REGISTRATION_REQUIRED';
+            userError.category = 'registration_error';
+            userError.requiresRegistration = true;
+            userError.originalError = error;
+            return userError;
+        }
+        
+        // Check for network/timeout errors
+        if (error.message?.includes('timeout') || 
+            error.message?.includes('network') ||
+            error.message?.includes('fetch')) {
+            const userError = new Error('Network error. Please check your connection and try again.');
+            userError.code = 'NETWORK_ERROR';
+            userError.category = 'network_error';
+            userError.originalError = error;
+            return userError;
+        }
+        
+        // Generic error with debugging info
+        const userError = new Error(error.message || 'Purchase failed. Please try again.');
+        userError.code = 'UNKNOWN_ERROR';
+        userError.category = 'unknown_error';
         userError.originalError = error;
         return userError;
+    }
+    
+    /**
+     * Create structured error for purchase validation failures
+     */
+    createValidationError(type, message, context = {}) {
+        const error = new Error(message);
+        error.code = type;
+        error.category = 'validation_error';
+        error.context = context;
+        error.timestamp = new Date().toISOString();
+        return error;
     }
     
     /**

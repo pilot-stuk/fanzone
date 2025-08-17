@@ -402,27 +402,59 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
      * Purchase a gift
      */
     checkUserRegistration() {
-        // Check if user has completed registration
-        if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
-            return window.FanZoneApp.isUserFullyRegistered();
-        }
-        
-        // Fallback to localStorage check
+        // Use GiftService's comprehensive validation
         try {
-            const saved = localStorage.getItem('fanzone_registration_state');
-            if (saved) {
-                const state = JSON.parse(saved);
-                return state.hasClickedStart && state.isFullyRegistered;
-            }
+            const registrationState = this.giftService.checkUserRegistrationState();
+            
+            // Log validation details for debugging
+            this.logger.debug('Controller registration check', {
+                isRegistered: registrationState.isRegistered,
+                source: registrationState.source,
+                validationCount: registrationState.validationResults?.length || 0
+            });
+            
+            return registrationState.isRegistered;
+            
         } catch (error) {
-            this.logger.warn('Failed to check registration state', error);
+            this.logger.warn('Failed to check registration state via GiftService', error);
+            
+            // Fallback to simple localStorage check
+            try {
+                const saved = localStorage.getItem('fanzone_registration_state');
+                if (saved) {
+                    const state = JSON.parse(saved);
+                    return state.hasClickedStart && state.isFullyRegistered;
+                }
+            } catch (fallbackError) {
+                this.logger.warn('Fallback registration check failed', fallbackError);
+            }
+            
+            return false;
         }
-        
-        return false;
     }
     
     showRegistrationRequired() {
-        this.showToast('⚠️ Please click "Start Collecting" to enable gift features!', 'warning');
+        // Get detailed registration state for better user messaging
+        let message = '⚠️ Please click "Start Collecting" to enable gift features!';
+        
+        try {
+            const registrationState = this.giftService.checkUserRegistrationState();
+            
+            if (registrationState.source === 'error') {
+                message = '⚠️ Registration verification failed. Please restart the app and click "Start Collecting"';
+            } else if (registrationState.validationResults) {
+                const failedValidations = registrationState.validationResults.filter(v => !v.isRegistered);
+                if (failedValidations.some(v => v.reason === 'expired')) {
+                    message = '⚠️ Your registration has expired. Please click "Start Collecting" again';
+                } else if (failedValidations.some(v => v.reason === 'missing_telegram_id')) {
+                    message = '⚠️ Platform verification failed. Please restart the app and click "Start Collecting"';
+                }
+            }
+        } catch (error) {
+            this.logger.warn('Failed to get detailed registration state', error);
+        }
+        
+        this.showToast(message, 'warning', 5000);
         
         // Show the main button to guide user
         const platformAdapter = window.DIContainer.get('platformAdapter');
@@ -546,45 +578,332 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
             }
             
         } catch (error) {
-            this.logger.error('Gift purchase failed', error);
+            this.logger.error('Gift purchase failed', error, { 
+                giftId, 
+                userId: user?.id,
+                errorType: this.categorizeError(error),
+                registrationState: this.giftService.checkUserRegistrationState()
+            });
             
-            // Enhanced error messages
-            let errorMessage = 'Purchase failed';
-            
-            if (error.message.includes('Start Collecting')) {
-                errorMessage = '⚠️ Please click "Start Collecting" first to enable gift purchases!';
-                
-                // Show main button to guide user to registration
-                const platformAdapter = window.DIContainer.get('platformAdapter');
-                platformAdapter.showMainButton('Start Collecting', () => {
-                    if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
-                        window.FanZoneApp.handleMainButtonClick();
-                    }
-                });
-                
-            } else if (error.message.includes('insufficient points')) {
-                errorMessage = 'Not enough points to purchase this gift';
-            } else if (error.message.includes('out of stock')) {
-                errorMessage = 'This gift is no longer available';
-            } else if (error.message.includes('already owned')) {
-                errorMessage = 'You already own this gift';
-            } else if (error.message.includes('timeout')) {
-                errorMessage = 'Purchase timed out. Please try again.';
-            } else if (error.message.includes('network')) {
-                errorMessage = 'Network error. Please check your connection.';
-            } else if (error.message) {
-                errorMessage = error.message;
-            }
-            
-            this.showToast(errorMessage, 'error');
-            
-            // Error haptic feedback
-            const platformAdapter = window.DIContainer.get('platformAdapter');
-            platformAdapter.sendHapticFeedback('error');
+            // Handle error with comprehensive categorization and guidance
+            await this.handlePurchaseError(error, giftId, gift, user);
             
         } finally {
             this.setButtonLoading(giftId, false);
         }
+    }
+    
+    /**
+     * Categorize error types for better handling
+     */
+    categorizeError(error) {
+        const errorMessage = error.message?.toLowerCase() || '';
+        
+        if (errorMessage.includes('start collecting') || errorMessage.includes('registration')) {
+            return 'REGISTRATION_REQUIRED';
+        } else if (errorMessage.includes('insufficient points') || errorMessage.includes('not enough points')) {
+            return 'INSUFFICIENT_POINTS';
+        } else if (errorMessage.includes('out of stock') || errorMessage.includes('supply')) {
+            return 'OUT_OF_STOCK';
+        } else if (errorMessage.includes('already owned') || errorMessage.includes('own this gift')) {
+            return 'ALREADY_OWNED';
+        } else if (errorMessage.includes('timeout')) {
+            return 'TIMEOUT';
+        } else if (errorMessage.includes('network') || errorMessage.includes('connection')) {
+            return 'NETWORK_ERROR';
+        } else if (errorMessage.includes('user not found')) {
+            return 'USER_NOT_FOUND';
+        } else if (errorMessage.includes('gift not found')) {
+            return 'GIFT_NOT_FOUND';
+        } else if (errorMessage.includes('database') || errorMessage.includes('repository')) {
+            return 'DATABASE_ERROR';
+        } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
+            return 'PERMISSION_ERROR';
+        } else {
+            return 'UNKNOWN_ERROR';
+        }
+    }
+    
+    /**
+     * Comprehensive purchase error handler with user guidance
+     */
+    async handlePurchaseError(error, giftId, gift, user) {
+        const errorType = this.categorizeError(error);
+        const platformAdapter = window.DIContainer.get('platformAdapter');
+        
+        // Send appropriate haptic feedback
+        platformAdapter.sendHapticFeedback('error');
+        
+        let errorInfo;
+        
+        switch (errorType) {
+            case 'REGISTRATION_REQUIRED':
+                errorInfo = await this.handleRegistrationError(error, gift);
+                break;
+                
+            case 'INSUFFICIENT_POINTS':
+                errorInfo = this.handleInsufficientPointsError(error, gift, user);
+                break;
+                
+            case 'OUT_OF_STOCK':
+                errorInfo = this.handleOutOfStockError(error, gift);
+                break;
+                
+            case 'ALREADY_OWNED':
+                errorInfo = this.handleAlreadyOwnedError(error, gift);
+                break;
+                
+            case 'TIMEOUT':
+                errorInfo = this.handleTimeoutError(error, gift);
+                break;
+                
+            case 'NETWORK_ERROR':
+                errorInfo = this.handleNetworkError(error, gift);
+                break;
+                
+            case 'USER_NOT_FOUND':
+                errorInfo = await this.handleUserNotFoundError(error, gift);
+                break;
+                
+            case 'GIFT_NOT_FOUND':
+                errorInfo = this.handleGiftNotFoundError(error, gift);
+                break;
+                
+            case 'DATABASE_ERROR':
+                errorInfo = this.handleDatabaseError(error, gift);
+                break;
+                
+            case 'PERMISSION_ERROR':
+                errorInfo = this.handlePermissionError(error, gift);
+                break;
+                
+            default:
+                errorInfo = this.handleUnknownError(error, gift);
+                break;
+        }
+        
+        // Show error message with appropriate styling
+        this.showToast(errorInfo.message, errorInfo.type || 'error', errorInfo.duration || 4000);
+        
+        // Execute recovery action if available
+        if (errorInfo.recoveryAction) {
+            try {
+                await errorInfo.recoveryAction();
+            } catch (recoveryError) {
+                this.logger.warn('Error recovery action failed', recoveryError);
+            }
+        }
+        
+        // Log structured error information
+        this.logger.info('Purchase error handled', {
+            errorType,
+            giftId,
+            giftName: gift?.name,
+            userId: user?.id,
+            message: errorInfo.message,
+            hasRecovery: !!errorInfo.recoveryAction
+        });
+    }
+    
+    /**
+     * Handle registration required errors
+     */
+    async handleRegistrationError(error, gift) {
+        const platformAdapter = window.DIContainer.get('platformAdapter');
+        
+        return {
+            message: '⚠️ Please click "Start Collecting" first to enable gift purchases!',
+            type: 'warning',
+            duration: 5000,
+            recoveryAction: async () => {
+                // Show registration guidance
+                this.showRegistrationRequired();
+                
+                // Show main button for immediate action
+                if (platformAdapter.isAvailable()) {
+                    await platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
+                        if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                            await window.FanZoneApp.handleMainButtonClick();
+                        }
+                    });
+                }
+            }
+        };
+    }
+    
+    /**
+     * Handle insufficient points errors
+     */
+    handleInsufficientPointsError(error, gift, user) {
+        const needed = gift ? gift.price_points - (user?.points || 0) : 0;
+        
+        return {
+            message: `💰 Not enough points! You need ${this.formatPoints(needed)} more points to purchase ${gift?.name || 'this gift'}.`,
+            type: 'warning',
+            duration: 4000,
+            recoveryAction: () => {
+                // Could trigger a "how to earn points" guide
+                this.showToast('💡 Tip: Complete activities to earn more points!', 'info', 3000);
+            }
+        };
+    }
+    
+    /**
+     * Handle out of stock errors
+     */
+    handleOutOfStockError(error, gift) {
+        return {
+            message: `📦 ${gift?.name || 'This gift'} is currently out of stock. Check back later!`,
+            type: 'warning',
+            duration: 4000,
+            recoveryAction: () => {
+                // Refresh gifts to show current availability
+                setTimeout(() => {
+                    this.renderGifts();
+                }, 1000);
+            }
+        };
+    }
+    
+    /**
+     * Handle already owned errors
+     */
+    handleAlreadyOwnedError(error, gift) {
+        return {
+            message: `✅ You already own ${gift?.name || 'this gift'}! Check your collection.`,
+            type: 'info',
+            duration: 3000,
+            recoveryAction: () => {
+                // Navigate to profile to show collection
+                if (window.FanZoneApp) {
+                    setTimeout(() => {
+                        window.FanZoneApp.navigateToPage('profile');
+                    }, 1000);
+                }
+            }
+        };
+    }
+    
+    /**
+     * Handle timeout errors
+     */
+    handleTimeoutError(error, gift) {
+        return {
+            message: '⏱️ Purchase timed out. Please check your connection and try again.',
+            type: 'error',
+            duration: 4000,
+            recoveryAction: () => {
+                // Refresh data after timeout
+                setTimeout(() => {
+                    this.loadData();
+                }, 2000);
+            }
+        };
+    }
+    
+    /**
+     * Handle network errors
+     */
+    handleNetworkError(error, gift) {
+        return {
+            message: '🌐 Network error. Please check your internet connection and try again.',
+            type: 'error',
+            duration: 5000,
+            recoveryAction: () => {
+                // Check network status and refresh if online
+                if (navigator.onLine) {
+                    setTimeout(() => {
+                        this.loadData();
+                    }, 2000);
+                }
+            }
+        };
+    }
+    
+    /**
+     * Handle user not found errors
+     */
+    async handleUserNotFoundError(error, gift) {
+        return {
+            message: '👤 User session expired. Please restart the app.',
+            type: 'error',
+            duration: 5000,
+            recoveryAction: async () => {
+                // Clear user session and restart
+                localStorage.removeItem('fanzone_current_user');
+                localStorage.removeItem('fanzone_auth_token');
+                
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
+        };
+    }
+    
+    /**
+     * Handle gift not found errors
+     */
+    handleGiftNotFoundError(error, gift) {
+        return {
+            message: '🎁 Gift not found. The gift may have been removed.',
+            type: 'error',
+            duration: 4000,
+            recoveryAction: () => {
+                // Refresh gifts list
+                this.loadData();
+            }
+        };
+    }
+    
+    /**
+     * Handle database errors
+     */
+    handleDatabaseError(error, gift) {
+        return {
+            message: '🔧 Database temporarily unavailable. Please try again in a moment.',
+            type: 'error',
+            duration: 5000,
+            recoveryAction: () => {
+                // Attempt retry after delay
+                setTimeout(() => {
+                    this.showToast('🔄 You can try purchasing again now.', 'info');
+                }, 5000);
+            }
+        };
+    }
+    
+    /**
+     * Handle permission errors
+     */
+    handlePermissionError(error, gift) {
+        return {
+            message: '🔒 Permission denied. Please restart the app and try again.',
+            type: 'error',
+            duration: 5000,
+            recoveryAction: () => {
+                // Clear auth and suggest restart
+                setTimeout(() => {
+                    this.showToast('💡 Tip: Restart the app to refresh permissions.', 'info');
+                }, 2000);
+            }
+        };
+    }
+    
+    /**
+     * Handle unknown errors
+     */
+    handleUnknownError(error, gift) {
+        return {
+            message: `❌ Purchase failed: ${error.message || 'Unknown error'}. Please try again.`,
+            type: 'error',
+            duration: 4000,
+            recoveryAction: () => {
+                // General recovery - refresh data
+                setTimeout(() => {
+                    this.loadData();
+                }, 2000);
+            }
+        };
     }
     
     /**
