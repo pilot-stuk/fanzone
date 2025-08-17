@@ -78,13 +78,18 @@ class GiftsController extends ControllerBase {
             // Load available gifts regardless of user authentication
             this.gifts = await this.giftService.getAvailableGifts();
             
-            // Load user gifts only if authenticated
-            if (currentUser) {
+            // Load user gifts only if authenticated AND registered
+            if (currentUser && this.checkUserRegistration()) {
                 this.logger.info('Loading user gifts', { userId: currentUser.id });
-                const userGifts = await this.giftService.getUserGifts(currentUser.telegram_id || currentUser.id);
-                this.userGifts = userGifts.map(ug => ug.gift_id || ug.gift?.id);
+                try {
+                    const userGifts = await this.giftService.getUserGifts(currentUser.telegram_id || currentUser.id);
+                    this.userGifts = userGifts.map(ug => ug.gift_id || ug.gift?.id);
+                } catch (error) {
+                    this.logger.warn('Failed to load user gifts, user may not be fully registered', error);
+                    this.userGifts = [];
+                }
             } else {
-                this.logger.info('No authenticated user, showing gifts without user data');
+                this.logger.info('No authenticated user or not registered, showing gifts without user data');
                 this.userGifts = [];
             }
             
@@ -241,9 +246,9 @@ class GiftsController extends ControllerBase {
      * Render gifts grid
      */
     renderGifts() {
-        const grid = document.getElementById('gifts-grid');
+        const grid = document.getElementById('gifts-container');
         if (!grid) {
-            this.logger.warn('Gifts grid element not found');
+            this.logger.warn('Gifts container element not found');
             return;
         }
         
