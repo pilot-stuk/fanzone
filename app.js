@@ -1125,6 +1125,20 @@ class FanZoneApplication {
                 const state = JSON.parse(saved);
                 console.log('📋 Parsed registration state:', state);
                 
+                // Check if state is too old (more than 7 days)
+                if (state.registrationTimestamp) {
+                    const ageInHours = (Date.now() - new Date(state.registrationTimestamp).getTime()) / (1000 * 60 * 60);
+                    console.log(`📋 Registration state age: ${Math.round(ageInHours)} hours`);
+                    
+                    if (ageInHours > 168) { // 7 days = 168 hours
+                        console.log('⚠️ Registration state too old, clearing it');
+                        this.logger?.warn('Registration state expired due to age', { ageInHours, state });
+                        localStorage.removeItem('fanzone_registration_state');
+                        this.resetRegistrationState();
+                        return;
+                    }
+                }
+                
                 // Don't clear state just because of platform mismatch
                 // Users might switch between web and Telegram
                 if (state.hasClickedStart && state.isFullyRegistered) {

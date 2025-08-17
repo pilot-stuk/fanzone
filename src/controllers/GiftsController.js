@@ -497,6 +497,9 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
     }
     
     async purchaseGift(giftId) {
+        let user = null;
+        let gift = null;
+        
         try {
             // Check registration first (simple check for UI)
             if (!this.checkUserRegistration()) {
@@ -520,14 +523,14 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
                 window.ServiceValidator.validateMethod(authService, 'getCurrentUser', 'AuthService');
             }
             
-            const user = authService.getCurrentUser();
+            user = authService.getCurrentUser();
             
             if (!user) {
                 this.showToast('Please login first', 'error');
                 return;
             }
             
-            const gift = this.gifts.find(g => g.id === giftId);
+            gift = this.gifts.find(g => g.id === giftId);
             if (!gift) {
                 this.showToast('Gift not found', 'error');
                 return;

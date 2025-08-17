@@ -23,8 +23,11 @@ class UserService extends window.Interfaces.IUserService {
             
             let user = null;
             
+            // Convert userId to string for string operations
+            const userIdStr = String(userId);
+            
             // Try different ID formats
-            if (userId.startsWith('local_')) {
+            if (userIdStr.startsWith('local_')) {
                 // Local user
                 user = this.getLocalUser(userId);
             } else if (typeof userId === 'number' || !isNaN(userId)) {
