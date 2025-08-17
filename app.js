@@ -797,26 +797,59 @@ class FanZoneApplication {
     }
     
     showToast(message, type = 'info', duration = 3000) {
-        // Create toast element
+        // Remove existing toasts to prevent stacking
+        const existingToasts = document.querySelectorAll('.toast');
+        existingToasts.forEach(toast => {
+            toast.classList.add('animate-out');
+            setTimeout(() => toast.remove(), 300);
+        });
+        
+        // Create enhanced toast element
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
         
+        // Add accessibility attributes
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'polite');
+        toast.setAttribute('aria-atomic', 'true');
+        
         // Add to body
         document.body.appendChild(toast);
         
-        // Animate in
-        setTimeout(() => {
-            toast.classList.add('show');
-        }, 10);
-        
-        // Remove after duration
-        setTimeout(() => {
-            toast.classList.remove('show');
+        // Enhanced animation with proper timing
+        requestAnimationFrame(() => {
+            toast.classList.add('animate-in');
             setTimeout(() => {
-                toast.remove();
+                toast.classList.add('show');
+            }, 10);
+        });
+        
+        // Auto-remove after duration with smooth exit animation
+        const removeTimeout = setTimeout(() => {
+            toast.classList.remove('show');
+            toast.classList.add('animate-out');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
             }, 300);
         }, duration);
+        
+        // Allow manual dismissal by clicking
+        toast.addEventListener('click', () => {
+            clearTimeout(removeTimeout);
+            toast.classList.remove('show');
+            toast.classList.add('animate-out');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
+        });
+        
+        // Add cursor pointer to indicate clickability
+        toast.style.cursor = 'pointer';
     }
     
     formatPoints(points) {
