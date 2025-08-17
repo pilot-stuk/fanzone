@@ -54,6 +54,9 @@ class FanZoneApplication {
             // Show loading screen
             this.showLoading('Initializing FanZone...');
             
+            // Ensure web registration button handler is always available
+            this.setupGlobalWebHandler();
+            
             // Get services from container (DIContainer should already be initialized)
             await this.injectServices();
             
@@ -107,6 +110,9 @@ class FanZoneApplication {
             this.isInitializing = false;
             
             this.logger.info('Application initialized successfully');
+            
+            // Add debugging tools
+            this.setupDebugTools();
             
             // Check registration state to determine initial page
             if (!this.isUserFullyRegistered()) {
@@ -491,36 +497,74 @@ class FanZoneApplication {
             
             // Show button for unregistered users with platform-specific handling
             if (!isRegistered) {
-                // Telegram platform
                 if (this.platformAdapter.isAvailable()) {
+                    // Telegram platform - show main button with retry logic
                     this.logger.info('Setting up Telegram main button for unregistered user');
                     
-                    const buttonShown = await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
-                        this.logger.info('Main button callback triggered - starting registration flow');
+                    // Ensure button callback is properly set
+                    const buttonCallback = async () => {
+                        this.logger.info('Telegram main button clicked');
                         try {
                             await this.handleMainButtonClick();
                         } catch (error) {
-                            this.logger.error('Main button click handler failed:', error);
+                            this.logger.error('Registration error:', error);
                             this.showToast('Registration failed. Please try again.', 'error');
                         }
-                    });
+                    };
                     
-                    this.logger.info('Telegram Start Collecting button setup', { 
-                        buttonShown,
-                        platform: 'telegram',
-                        userId: this.platformAdapter.getUserData()?.id,
-                        buttonVisible: this.platformAdapter.getMainButtonState()?.visible
-                    });
+                    // Show the button with retry logic
+                    let attempts = 0;
+                    const maxAttempts = 3;
+                    let buttonShown = false;
+                    
+                    while (attempts < maxAttempts && !buttonShown) {
+                        try {
+                            buttonShown = await this.platformAdapter.showMainButton(
+                                '🎁 Start Collecting!', 
+                                buttonCallback
+                            );
+                            
+                            if (buttonShown) {
+                                this.logger.info('Telegram main button shown successfully');
+                                break;
+                            } else {
+                                attempts++;
+                                this.logger.warn(`Failed to show button, attempt ${attempts}/${maxAttempts}`);
+                                if (attempts < maxAttempts) {
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                }
+                            }
+                        } catch (error) {
+                            attempts++;
+                            this.logger.error(`Button setup error, attempt ${attempts}/${maxAttempts}:`, error);
+                            if (attempts < maxAttempts) {
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                            }
+                        }
+                    }
                     
                     if (!buttonShown) {
-                        this.logger.warn('Failed to show Telegram main button - checking platform state');
-                        const platformState = this.platformAdapter.getModeInfo();
-                        this.logger.warn('Platform state:', platformState);
+                        this.logger.error('Failed to show Telegram main button after multiple attempts');
+                        // Fall back to web interface
+                        this.setupWebRegistrationInterface();
+                    } else {
+                        this.logger.info('Telegram Start Collecting button setup completed', {
+                            platform: 'telegram',
+                            attempts: attempts + 1,
+                            buttonVisible: this.platformAdapter.getMainButtonState()?.visible
+                        });
                     }
+                    
                 } else {
-                    // Web platform - ensure web interface is properly configured
+                    // Web platform
                     this.logger.info('Web platform detected, configuring web registration interface');
                     this.setupWebRegistrationInterface();
+                    
+                    // Also trigger re-render of gifts controller to show button
+                    if (this.giftsController) {
+                        this.logger.info('Re-rendering gifts to show web button');
+                        this.giftsController.renderGifts();
+                    }
                 }
             } else {
                 // Registered user - hide main button and log platform info
@@ -571,26 +615,42 @@ class FanZoneApplication {
     }
     
     /**
+     * Setup global web registration handler early in initialization
+     */
+    setupGlobalWebHandler() {
+        // Ensure web registration button handler is always available
+        if (!window.handleStartCollecting) {
+            window.handleStartCollecting = async () => {
+                console.log('🎯 Web Start Collecting button clicked');
+                
+                if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                    try {
+                        await window.FanZoneApp.handleMainButtonClick();
+                    } catch (error) {
+                        console.error('Registration failed:', error);
+                        if (window.FanZoneApp.showToast) {
+                            window.FanZoneApp.showToast('Registration failed. Please try again.', 'error');
+                        } else {
+                            alert('Registration failed. Please try again.');
+                        }
+                    }
+                } else {
+                    console.error('FanZone app not ready');
+                    alert('App is still loading. Please wait and try again.');
+                }
+            };
+            console.log('✅ Global web registration handler set up');
+        }
+    }
+
+    /**
      * Setup web-specific registration interface
      */
     setupWebRegistrationInterface() {
         this.logger.info('Setting up web registration interface');
         
-        // The web button will be created by the GiftsController in renderRegistrationPrompt()
-        // We just need to ensure the click handler will work when elements are created
-        
-        // Store the registration handler globally so the GiftsController can use it
-        if (!window.handleStartCollecting) {
-            window.handleStartCollecting = async () => {
-                this.logger.info('Web Start Collecting button clicked');
-                try {
-                    await this.handleMainButtonClick();
-                } catch (error) {
-                    this.logger.error('Web Start Collecting failed:', error);
-                    this.showToast('Registration failed. Please try again.', 'error');
-                }
-            };
-        }
+        // Ensure global handler is available
+        this.setupGlobalWebHandler();
         
         // Also check if elements already exist and set them up
         const webRegistrationElements = document.querySelectorAll('.web-registration, .start-collecting-web');
@@ -1056,56 +1116,27 @@ class FanZoneApplication {
             if (saved) {
                 const state = JSON.parse(saved);
                 
-                // Validate the loaded state structure
-                if (!state.registrationTimestamp || !state.hasClickedStart) {
-                    this.logger?.warn('Invalid registration state structure, clearing', state);
-                    localStorage.removeItem('fanzone_registration_state');
-                    this.resetRegistrationState();
-                    return;
-                }
-                
-                // Validate platform consistency
-                const currentPlatform = this.platformAdapter?.isAvailable() ? 'telegram' : 'web';
-                if (state.platform && state.platform !== currentPlatform) {
-                    this.logger?.warn('Platform mismatch in registration state', {
-                        saved: state.platform,
-                        current: currentPlatform
+                // Don't clear state just because of platform mismatch
+                // Users might switch between web and Telegram
+                if (state.hasClickedStart && state.isFullyRegistered) {
+                    this.logger?.info('Valid registration state found, preserving it', {
+                        platform: state.platform,
+                        timestamp: state.registrationTimestamp
                     });
-                    
-                    // Clear state for platform mismatches to prevent bypass
-                    localStorage.removeItem('fanzone_registration_state');
-                    this.resetRegistrationState();
+                    this.userRegistrationState = state;
                     return;
                 }
                 
-                // Validate timestamp (expire after 7 days)
-                const stateAge = Date.now() - new Date(state.registrationTimestamp).getTime();
-                const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-                if (stateAge > maxAge) {
-                    this.logger?.warn('Registration state expired', {
-                        ageHours: Math.round(stateAge / (60 * 60 * 1000)),
-                        maxAgeDays: 7
-                    });
-                    localStorage.removeItem('fanzone_registration_state');
-                    this.resetRegistrationState();
-                    return;
-                }
-                
-                // State is valid
-                this.userRegistrationState = {
-                    ...state,
-                    // Ensure platform is current
-                    platform: currentPlatform
-                };
-                this.logger?.info('Registration state loaded and validated', this.userRegistrationState);
-                
-            } else {
-                this.logger?.info('No saved registration state found - new user');
-                this.resetRegistrationState();
+                // Only clear if state is incomplete
+                this.logger?.warn('Incomplete registration state found', state);
             }
+            
+            // No valid state found
+            this.resetRegistrationState();
+            this.logger?.info('No valid registration state, user needs to register');
+            
         } catch (error) {
             this.logger?.warn('Failed to load registration state', error);
-            localStorage.removeItem('fanzone_registration_state');
             this.resetRegistrationState();
         }
     }
@@ -1801,6 +1832,90 @@ class FanZoneApplication {
         console.log('='.repeat(50));
         
         return state;
+    }
+
+    /**
+     * Setup debugging tools for development and troubleshooting
+     */
+    setupDebugTools() {
+        // Add manual registration trigger for debugging
+        window.triggerRegistration = async () => {
+            console.log('🔧 Manually triggering registration...');
+            
+            if (this.handleMainButtonClick) {
+                try {
+                    await this.handleMainButtonClick();
+                    console.log('✅ Registration triggered successfully');
+                } catch (error) {
+                    console.error('❌ Registration failed:', error);
+                }
+            } else {
+                console.error('❌ Registration handler not available');
+            }
+        };
+        
+        // Add registration state inspector
+        window.inspectRegistration = () => {
+            const state = {
+                appReady: this.isInitialized,
+                isRegistered: this.isUserFullyRegistered(),
+                registrationState: this.userRegistrationState,
+                localStorage: localStorage.getItem('fanzone_registration_state'),
+                platform: this.platformAdapter?.isAvailable() ? 'telegram' : 'web',
+                mainButtonState: this.platformAdapter?.getMainButtonState?.() || null,
+                webButtonExists: document.querySelectorAll('.start-collecting-web').length > 0,
+                hasGlobalHandler: !!window.handleStartCollecting
+            };
+            
+            console.log('📊 Registration State:', state);
+            return state;
+        };
+        
+        // Add button visibility checker
+        window.checkButtonVisibility = () => {
+            const telegram = {
+                adapterAvailable: !!this.platformAdapter,
+                platformAvailable: this.platformAdapter?.isAvailable(),
+                mainButtonState: this.platformAdapter?.getMainButtonState?.() || null
+            };
+            
+            const web = {
+                globalHandler: !!window.handleStartCollecting,
+                webButtons: Array.from(document.querySelectorAll('.start-collecting-web')).map(btn => ({
+                    visible: btn.style.display !== 'none',
+                    hasClick: !!btn.onclick,
+                    text: btn.textContent
+                }))
+            };
+            
+            console.log('🔍 Button Visibility Check:', { telegram, web });
+            return { telegram, web };
+        };
+        
+        // Add registration state reset for testing
+        window.resetRegistrationForTesting = () => {
+            console.log('🧹 Clearing registration state...');
+            localStorage.removeItem('fanzone_registration_state');
+            localStorage.removeItem('fanzone_auth_token');
+            localStorage.removeItem('fanzone_current_user');
+            this.resetRegistrationState();
+            console.log('✅ Registration state cleared');
+            
+            // Re-setup UI
+            if (this.setupTelegramUI) {
+                this.setupTelegramUI().catch(console.error);
+            }
+        };
+        
+        this.logger.info('Debug tools initialized', {
+            tools: ['triggerRegistration', 'inspectRegistration', 'checkButtonVisibility', 'resetRegistrationForTesting']
+        });
+        
+        console.log('💡 Debug tools available:');
+        console.log('  window.inspectRegistration() - Check registration state');
+        console.log('  window.triggerRegistration() - Manually register');
+        console.log('  window.checkButtonVisibility() - Check button state');
+        console.log('  window.resetRegistrationForTesting() - Clear registration');
     }
 }
 

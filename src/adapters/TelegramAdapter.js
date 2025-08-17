@@ -96,70 +96,36 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
         
         const webApp = window.Telegram.WebApp;
         
-        // Check if WebApp is properly initialized
-        if (!webApp.initData && !webApp.initDataUnsafe) {
-            return {
-                isAvailable: false,
-                forceFallback: false,
-                reason: 'telegram_not_initialized'
-            };
-        }
-        
-        // Advanced checks for WebApp readiness
-        try {
-            // Test WebApp methods availability
-            const requiredMethods = ['ready', 'expand', 'close'];
-            const missingMethods = requiredMethods.filter(method => 
-                typeof webApp[method] !== 'function'
-            );
+        // More permissive check - allow Telegram mode even without full data
+        if (webApp && typeof webApp.ready === 'function') {
+            console.log('✅ Telegram API available, proceeding with Telegram mode');
             
-            if (missingMethods.length > 0) {
-                return {
-                    isAvailable: false,
-                    forceFallback: false,
-                    reason: `missing_methods: ${missingMethods.join(', ')}`
-                };
-            }
-            
-            // Check for platform-specific features
-            const platformFeatures = {
-                mainButton: !!webApp.MainButton,
-                backButton: !!webApp.BackButton,
-                hapticFeedback: !!webApp.HapticFeedback,
-                themingSupport: !!webApp.themeParams
-            };
-            
-            console.log('📋 Telegram platform features:', platformFeatures);
-            
-            // Validate user data if available - be more permissive for button functionality
+            // Get user data if available (but don't require it)
             const userData = webApp.initDataUnsafe?.user;
-            if (!userData || !userData.id) {
-                console.warn('⚠️ No Telegram user data available - Telegram API available but no user data');
-                // Still allow Telegram mode for button functionality, but log the issue
-                console.warn('Proceeding with Telegram mode anyway to allow button functionality');
-            }
-            
-            if (userData && userData.id && typeof userData.id !== 'number') {
-                console.warn('⚠️ Invalid user data type, but Telegram API is available');
-                // Allow Telegram mode but log the concern
+            if (!userData) {
+                console.log('⚠️ No user data available, but Telegram API is functional');
             }
             
             return {
                 isAvailable: true,
                 forceFallback: false,
                 reason: 'telegram_available',
-                features: platformFeatures,
+                features: {
+                    mainButton: !!webApp.MainButton,
+                    backButton: !!webApp.BackButton,
+                    hapticFeedback: !!webApp.HapticFeedback,
+                    themingSupport: !!webApp.themeParams
+                },
                 userData: userData
             };
-            
-        } catch (error) {
-            console.warn('Telegram availability check failed:', error);
-            return {
-                isAvailable: false,
-                forceFallback: false,
-                reason: `availability_check_failed: ${error.message}`
-            };
         }
+        
+        // If we reach here, Telegram API is not properly available
+        return {
+            isAvailable: false,
+            forceFallback: false,
+            reason: 'telegram_not_initialized'
+        };
     }
     
     /**
