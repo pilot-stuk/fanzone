@@ -35,6 +35,24 @@ class AuthService extends window.Interfaces.IAuthProvider {
                 throw new Error('Failed to authenticate user');
             }
             
+            // NEW: Add explicit validation after user creation
+            if (!user.id || user.is_local) {
+                this.logger.warn('User creation may have failed, attempting retry', { 
+                    userId: user.telegram_id,
+                    hasId: !!user.id,
+                    isLocal: !!user.is_local 
+                });
+                user = await this.retryUserCreation(userData);
+            }
+            
+            // NEW: Verify user can perform gift operations
+            const hasGiftPermissions = await this.validateUserGiftPermissions(user);
+            this.logger.debug('User gift permissions validation result', { 
+                userId: user.telegram_id,
+                hasPermissions: hasGiftPermissions,
+                isLocal: !!user.is_local 
+            });
+            
             // Update last login
             await this.updateLastLogin(user.id);
             
@@ -51,7 +69,8 @@ class AuthService extends window.Interfaces.IAuthProvider {
             
             this.logger.info('User authenticated successfully', { 
                 userId: user.telegram_id,
-                username: user.username 
+                username: user.username,
+                hasDbAccess: !user.is_local
             });
             
             return user;
@@ -129,29 +148,87 @@ class AuthService extends window.Interfaces.IAuthProvider {
             
             this.logger.debug('Creating user with data', newUser);
             
-            // Use RPC function for better error handling
-            const result = await this.repository.execute('create_user', {
-                p_telegram_id: newUser.telegram_id,
-                p_username: newUser.username,
-                p_first_name: newUser.first_name,
-                p_last_name: newUser.last_name
-            });
-            
-            if (result && result.success) {
-                const createdUser = result.user || newUser;
+            // Try RPC function first (if it exists)
+            try {
+                this.logger.debug('Attempting to create user via RPC function', { 
+                    telegram_id: newUser.telegram_id,
+                    username: newUser.username 
+                });
                 
-                // Track user registration
-                window.EventBus?.emit('user:registered', { user: createdUser });
+                const result = await this.repository.execute('create_user', {
+                    p_telegram_id: newUser.telegram_id,
+                    p_username: newUser.username,
+                    p_first_name: newUser.first_name,
+                    p_last_name: newUser.last_name
+                });
                 
-                return createdUser;
+                this.logger.debug('RPC create_user result', { result });
+                
+                if (result && result.success) {
+                    const createdUser = result.user || newUser;
+                    
+                    this.logger.info('User created successfully via RPC function', { 
+                        userId: createdUser.telegram_id,
+                        created: result.created,
+                        message: result.message 
+                    });
+                    
+                    // Track user registration
+                    window.EventBus?.emit('user:registered', { 
+                        user: createdUser,
+                        method: 'rpc',
+                        created: result.created 
+                    });
+                    
+                    return createdUser;
+                } else if (result) {
+                    this.logger.warn('RPC create_user returned unsuccessful result', { 
+                        result,
+                        telegram_id: newUser.telegram_id 
+                    });
+                }
+            } catch (rpcError) {
+                this.logger.debug('RPC function failed, trying direct insert', { 
+                    error: rpcError.message,
+                    telegram_id: newUser.telegram_id 
+                });
             }
             
             // Fallback to direct insert
+            this.logger.debug('Attempting direct user insert', { 
+                telegram_id: newUser.telegram_id 
+            });
+            
             const createdUser = await this.repository.create('users', newUser);
             
             if (!createdUser) {
                 throw new Error('Failed to create user in database');
             }
+            
+            this.logger.debug('Direct insert successful, verifying user', { 
+                userId: createdUser.telegram_id || createdUser.id 
+            });
+            
+            // Verify the user was actually created and can be retrieved
+            const verifiedUser = await this.getUserByTelegramId(userData.id);
+            if (verifiedUser) {
+                this.logger.info('User creation verified successfully', { 
+                    userId: verifiedUser.telegram_id 
+                });
+                
+                // Track user registration
+                window.EventBus?.emit('user:registered', { 
+                    user: verifiedUser,
+                    method: 'direct_insert',
+                    verified: true 
+                });
+                return verifiedUser;
+            }
+            
+            this.logger.warn('User creation succeeded but verification failed', { 
+                createdUser: createdUser.telegram_id || createdUser.id,
+                telegram_id: userData.id 
+            });
             
             return createdUser;
             
@@ -161,10 +238,14 @@ class AuthService extends window.Interfaces.IAuthProvider {
             // Check for specific errors
             if (error.message.includes('duplicate') || error.message.includes('unique')) {
                 // User might already exist, try to fetch
-                return await this.getUserByTelegramId(userData.id);
+                const existingUser = await this.getUserByTelegramId(userData.id);
+                if (existingUser) {
+                    this.logger.info('Found existing user after duplicate error', { userId: existingUser.telegram_id });
+                    return existingUser;
+                }
             }
             
-            if (error.message.includes('permission') || error.message.includes('RLS')) {
+            if (error.message.includes('permission') || error.message.includes('RLS') || error.code === 'RLS_ERROR') {
                 this.logger.warn('Database permission issue, falling back to local storage');
                 return await this.createLocalUser(userData);
             }
@@ -419,6 +500,114 @@ class AuthService extends window.Interfaces.IAuthProvider {
         } catch (error) {
             this.logger.error('Failed to refresh user', error);
             throw error;
+        }
+    }
+    
+    /**
+     * Retry user creation with enhanced error handling
+     */
+    async retryUserCreation(userData, maxRetries = 3) {
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.debug(`User creation retry attempt ${attempt}/${maxRetries}`, { 
+                    userId: userData.id 
+                });
+                
+                // First, check if user was actually created but not detected
+                const existingUser = await this.getUserByTelegramId(userData.id);
+                if (existingUser && !existingUser.is_local) {
+                    this.logger.info('Found existing database user on retry', { 
+                        userId: existingUser.telegram_id,
+                        attempt 
+                    });
+                    return existingUser;
+                }
+                
+                // Try creating user again
+                const newUser = await this.createUser(userData);
+                
+                // Verify creation was successful
+                if (newUser && !newUser.is_local) {
+                    this.logger.info('User creation successful on retry', { 
+                        userId: newUser.telegram_id,
+                        attempt 
+                    });
+                    return newUser;
+                }
+                
+                // If still local user, continue retrying
+                if (newUser && newUser.is_local && attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+                    continue;
+                }
+                
+                return newUser; // Return local user if all retries failed
+                
+            } catch (error) {
+                lastError = error;
+                this.logger.warn(`User creation retry ${attempt} failed`, { 
+                    error: error.message,
+                    userId: userData.id 
+                });
+                
+                if (attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+                } else {
+                    // Final attempt failed, fall back to local user
+                    this.logger.error('All user creation retries failed, using local fallback', { 
+                        error: error.message,
+                        userId: userData.id 
+                    });
+                    return await this.createLocalUser(userData);
+                }
+            }
+        }
+        
+        throw lastError || new Error('Failed to create user after retries');
+    }
+    
+    /**
+     * Validate that user can perform gift operations
+     */
+    async validateUserGiftPermissions(user) {
+        try {
+            // Check if user has proper database access
+            if (user.is_local) {
+                this.logger.warn('User is in local mode - gift purchases may not work', { 
+                    userId: user.telegram_id 
+                });
+                // Don't throw error, just log warning for now
+                return false;
+            }
+            
+            // Try to verify user can access gifts table by getting gift count
+            // This will test if the user permissions are working correctly
+            const giftService = window.DIContainer?.get('giftService');
+            if (giftService) {
+                try {
+                    await giftService.getAvailableGifts();
+                    this.logger.debug('User gift permissions validated successfully', { 
+                        userId: user.telegram_id 
+                    });
+                    return true;
+                } catch (giftError) {
+                    this.logger.warn('User may not have proper gift access permissions', { 
+                        userId: user.telegram_id,
+                        error: giftError.message 
+                    });
+                    return false;
+                }
+            }
+            
+            return true; // Assume permissions are OK if we can't test
+            
+        } catch (error) {
+            this.logger.error('Failed to validate user gift permissions', error, { 
+                userId: user.telegram_id 
+            });
+            return false;
         }
     }
 }
