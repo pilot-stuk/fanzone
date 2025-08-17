@@ -116,18 +116,30 @@ class FanZoneApplication {
             this.setupDebugTools();
             
             // Check registration state to determine initial page
+            this.logger.info('🎯 Determining initial page', {
+                currentPageBefore: this.currentPage,
+                isUserRegistered: this.isUserFullyRegistered(),
+                registrationState: this.userRegistrationState
+            });
+            
             if (!this.isUserFullyRegistered()) {
                 // For unregistered users, stay on gifts page but they'll see the lock screen
                 this.currentPage = 'gifts';
-                this.logger.info('User not registered, showing gifts page with registration prompt', {
+                this.logger.info('👤 User not registered, showing gifts page with registration prompt', {
                     registrationState: this.userRegistrationState,
                     isRegistered: this.isUserFullyRegistered(),
                     platformAvailable: this.platformAdapter.isAvailable(),
-                    platformMode: this.platformAdapter.getModeInfo()
+                    platformMode: this.platformAdapter.getModeInfo(),
+                    finalPage: this.currentPage
+                });
+            } else {
+                this.logger.info('✅ User registered, staying on current page', {
+                    currentPage: this.currentPage
                 });
             }
             
             // Navigate to initial page
+            this.logger.info(`🧭 Navigating to initial page: ${this.currentPage}`);
             this.navigateToPage(this.currentPage);
             
             // Show welcome message after everything is loaded
@@ -446,8 +458,15 @@ class FanZoneApplication {
         
         this.currentPage = page;
         
+        this.logger.info(`📍 About to initialize page: ${page}`, {
+            pageElementExists: !!document.getElementById(`${page}-page`),
+            isUserRegistered: this.isUserFullyRegistered()
+        });
+        
         // Initialize page content
-        this.initializePage(page);
+        this.initializePage(page).catch(error => {
+            this.logger.error(`❌ Page initialization failed for ${page}`, error);
+        });
         
         // Track navigation
         this.eventBus.emit('navigation:page:changed', { page });

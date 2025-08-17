@@ -66,10 +66,23 @@ class GiftsController extends ControllerBase {
             // Initialize event system first
             await this.initializeEventSystem();
             
+            this.logger.info('📊 Loading gifts data...');
             await this.loadData();
+            
+            this.logger.info('🎛️ Setting up UI...');
             this.setupUI();
+            
+            this.logger.info('👂 Setting up event listeners...');
             this.setupEventListeners();
+            
+            // Clear loading state before rendering
+            this.isLoading = false;
+            this.logger.info('🔄 Loading state cleared, ready to show content');
+            
+            this.logger.info('🎨 About to render gifts...');
             this.renderGifts();
+            
+            this.logger.info('🏁 Gifts controller initialization sequence complete');
             
             this.isInitialized = true;
             this.logger.info('✅ Gifts controller initialized successfully');
@@ -88,8 +101,15 @@ class GiftsController extends ControllerBase {
             const authService = window.DIContainer.get('authService');
             const currentUser = authService.getCurrentUser();
             
+            this.logger.info('📦 Loading available gifts...');
             // Load available gifts regardless of user authentication
-            this.gifts = await this.giftService.getAvailableGifts();
+            try {
+                this.gifts = await this.giftService.getAvailableGifts();
+                this.logger.info(`✅ Loaded ${this.gifts.length} available gifts`);
+            } catch (giftError) {
+                this.logger.warn('⚠️ Failed to load available gifts, using empty array', giftError);
+                this.gifts = [];
+            }
             
             // Load user gifts only if authenticated AND registered
             if (currentUser && this.checkUserRegistration()) {
