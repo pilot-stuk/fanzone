@@ -402,6 +402,12 @@ class FanZoneApplication {
      * Navigate to a page
      */
     navigateToPage(page) {
+        // Block navigation to gifts for unregistered users
+        if (page === 'gifts' && !this.isUserFullyRegistered()) {
+            this.logger.warn('Navigation to gifts blocked - user not registered');
+            // Still navigate to show the lock screen
+        }
+        
         // Update navigation UI
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.page === page);
@@ -420,7 +426,10 @@ class FanZoneApplication {
         // Track navigation
         this.eventBus.emit('navigation:page:changed', { page });
         
-        this.logger.debug('Navigated to page', { page });
+        this.logger.debug('Navigated to page', { 
+            page,
+            isRegistered: this.isUserFullyRegistered()
+        });
     }
     
     /**
@@ -935,14 +944,34 @@ class FanZoneApplication {
         try {
             const saved = localStorage.getItem('fanzone_registration_state');
             if (saved) {
-                this.userRegistrationState = JSON.parse(saved);
-                this.logger?.info('Registration state loaded', this.userRegistrationState);
+                const state = JSON.parse(saved);
+                
+                // Validate the loaded state - clear if invalid
+                if (!state.registrationTimestamp || !state.hasClickedStart) {
+                    this.logger?.warn('Invalid registration state found, clearing', state);
+                    localStorage.removeItem('fanzone_registration_state');
+                    this.userRegistrationState = {
+                        hasClickedStart: false,
+                        isFullyRegistered: false,
+                        registrationTimestamp: null
+                    };
+                } else {
+                    this.userRegistrationState = state;
+                    this.logger?.info('Registration state loaded', this.userRegistrationState);
+                }
             } else {
-                this.logger?.info('No saved registration state found');
+                this.logger?.info('No saved registration state found - new user');
+                // Ensure clean state for new users
+                this.userRegistrationState = {
+                    hasClickedStart: false,
+                    isFullyRegistered: false,
+                    registrationTimestamp: null
+                };
             }
         } catch (error) {
             this.logger?.warn('Failed to load registration state', error);
             // Reset to default state on error
+            localStorage.removeItem('fanzone_registration_state');
             this.userRegistrationState = {
                 hasClickedStart: false,
                 isFullyRegistered: false,
@@ -978,6 +1007,25 @@ class FanZoneApplication {
         };
         localStorage.removeItem('fanzone_registration_state');
         this.logger.info('Registration state cleared');
+        // Force UI refresh
+        if (this.giftsController) {
+            this.giftsController.renderGifts();
+        }
+        this.setupTelegramUI();
+    }
+    
+    /**
+     * Debug registration state
+     */
+    debugRegistration() {
+        console.log('=== Registration Debug Info ===');
+        console.log('Current State:', this.userRegistrationState);
+        console.log('Is Registered:', this.isUserFullyRegistered());
+        console.log('LocalStorage:', localStorage.getItem('fanzone_registration_state'));
+        console.log('Current User:', this.authService?.getCurrentUser());
+        console.log('Platform Available:', this.platformAdapter?.isAvailable());
+        console.log('===============================');
+        return this.userRegistrationState;
     }
     
     truncateText(text, maxLength) {

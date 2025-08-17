@@ -305,15 +305,35 @@ class LeaderboardController {
      * Show empty state
      */
     renderEmptyState() {
-        return `
-            <div class="empty-state">
-                <h3>🏆 No rankings yet</h3>
-                <p>Be the first to collect gifts and climb the leaderboard!</p>
-                <button class="btn btn-primary" onclick="window.FanZoneApp.navigateToPage('gifts')">
-                    Start Collecting
-                </button>
-            </div>
-        `;
+        // Check if user is registered
+        const isRegistered = window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered && 
+                           window.FanZoneApp.isUserFullyRegistered();
+        
+        if (!isRegistered) {
+            return `
+                <div class="empty-state">
+                    <h3>🏆 No rankings yet</h3>
+                    <p>Be the first to collect gifts and climb the leaderboard!</p>
+                    <button class="btn btn-primary" onclick="
+                        if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                            window.FanZoneApp.handleMainButtonClick();
+                        }
+                    ">
+                        Start Collecting
+                    </button>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="empty-state">
+                    <h3>🏆 No rankings yet</h3>
+                    <p>Be the first to collect gifts and climb the leaderboard!</p>
+                    <button class="btn btn-primary" onclick="window.FanZoneApp.navigateToPage('gifts')">
+                        View Gifts
+                    </button>
+                </div>
+            `;
+        }
     }
     
     /**
