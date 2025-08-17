@@ -238,19 +238,66 @@ class DIContainer {
      * Register repositories
      */
     registerRepositories() {
-        // Supabase Repository
+        // Supabase Repository with enhanced initialization
         this.register('repository', (logger) => {
-            const supabaseClient = window.supabase?.createClient(
-                CONFIG.SUPABASE.URL,
-                CONFIG.SUPABASE.ANON_KEY
-            );
-            
-            if (!supabaseClient) {
-                logger.warn('Supabase client not available, using mock repository');
-                return new MockRepository(logger);
+            // Check if Supabase is available
+            if (!window.supabase) {
+                logger.error('Supabase library not loaded! Check if script is included in index.html');
+                throw new Error('Supabase library not available');
             }
             
-            return new window.SupabaseRepository(supabaseClient, logger);
+            // Validate configuration
+            if (!CONFIG.SUPABASE.URL || !CONFIG.SUPABASE.ANON_KEY) {
+                logger.error('Supabase configuration missing!', {
+                    hasUrl: !!CONFIG.SUPABASE.URL,
+                    hasKey: !!CONFIG.SUPABASE.ANON_KEY
+                });
+                throw new Error('Supabase configuration is incomplete');
+            }
+            
+            try {
+                // Create Supabase client with proper error handling
+                const supabaseClient = window.supabase.createClient(
+                    CONFIG.SUPABASE.URL,
+                    CONFIG.SUPABASE.ANON_KEY,
+                    {
+                        auth: {
+                            persistSession: false // Disable session persistence for Mini App
+                        },
+                        realtime: {
+                            params: {
+                                eventsPerSecond: 2 // Reduce realtime load
+                            }
+                        }
+                    }
+                );
+                
+                if (!supabaseClient) {
+                    throw new Error('Failed to create Supabase client');
+                }
+                
+                logger.info('Supabase client created successfully', {
+                    url: CONFIG.SUPABASE.URL.substring(0, 30) + '...',
+                    hasAuth: !!supabaseClient.auth,
+                    hasFrom: !!supabaseClient.from,
+                    hasRpc: !!supabaseClient.rpc
+                });
+                
+                // Create repository instance
+                const repository = new window.SupabaseRepository(supabaseClient, logger);
+                
+                // Test connection immediately
+                repository.initialize().catch(error => {
+                    logger.error('Supabase repository initialization failed', error);
+                });
+                
+                return repository;
+                
+            } catch (error) {
+                logger.error('Failed to create Supabase client', error);
+                logger.warn('Falling back to mock repository for development');
+                return new MockRepository(logger);
+            }
         }, {
             singleton: true,
             dependencies: ['logger'],

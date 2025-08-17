@@ -504,42 +504,72 @@ class FanZoneApplication {
     }
     
     /**
-     * Handle main button click - Enhanced with async handling
+     * Handle main button click - Enhanced with database validation
      */
     async handleMainButtonClick() {
         try {
-            const user = this.authService.getCurrentUser();
+            this.logger.info('Main button clicked - starting enhanced authentication flow');
             
             // Show loading state on main button with timeout protection
             await this.platformAdapter.setMainButtonLoading(true, 15000);
             
-            if (!user) {
-                // Authenticate first
-                try {
-                    await this.authService.authenticate();
-                    this.navigateToPage('gifts');
-                    
-                    // Hide loading and main button after successful navigation
-                    await this.platformAdapter.setMainButtonLoading(false);
-                    await this.platformAdapter.hideMainButton();
-                    
-                } catch (authError) {
-                    this.logger.error('Authentication failed on main button click', authError);
-                    this.showToast('Please login to start collecting gifts', 'error');
-                    await this.platformAdapter.setMainButtonLoading(false);
+            // Always authenticate to ensure database registration
+            try {
+                this.logger.info('Starting authentication with database validation...');
+                
+                // Authenticate user (this will create user in database if needed)
+                const user = await this.authService.authenticate();
+                
+                if (!user) {
+                    throw new Error('Authentication returned null user');
                 }
-            } else {
-                // Navigate to gifts page
+                
+                // Enhanced validation: Verify user is actually in database
+                const isRegistered = await this.validateUserRegistration(user);
+                
+                if (!isRegistered) {
+                    this.logger.warn('User not properly registered in database, attempting fix...');
+                    await this.ensureUserInDatabase(user);
+                }
+                
+                // Test database connection and user permissions
+                await this.testUserDatabaseAccess(user);
+                
+                // Success - navigate to gifts
                 this.navigateToPage('gifts');
                 
-                // Hide loading and main button after navigation
+                // Show success message
+                this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
+                
+                // Hide loading and main button after successful navigation
                 await this.platformAdapter.setMainButtonLoading(false);
                 await this.platformAdapter.hideMainButton();
+                
+                this.logger.info('User registration and navigation completed successfully', {
+                    userId: user.telegram_id,
+                    isLocal: !!user.is_local
+                });
+                
+            } catch (authError) {
+                this.logger.error('Enhanced authentication failed', authError);
+                
+                // Provide specific error messages
+                let errorMessage = 'Authentication failed. ';
+                if (authError.message.includes('database')) {
+                    errorMessage += 'Database connection issue. Please try again.';
+                } else if (authError.message.includes('permission')) {
+                    errorMessage += 'Permission issue. Contact support.';
+                } else {
+                    errorMessage += 'Please refresh and try again.';
+                }
+                
+                this.showToast(errorMessage, 'error');
+                await this.platformAdapter.setMainButtonLoading(false);
             }
             
         } catch (error) {
             this.logger.error('Main button click handling failed', error);
-            this.showToast('Something went wrong. Please try again.', 'error');
+            this.showToast('Something went wrong. Please refresh and try again.', 'error');
             
             // Ensure loading state is cleared
             try {
@@ -547,6 +577,106 @@ class FanZoneApplication {
             } catch (cleanupError) {
                 console.warn('Failed to clear main button loading state:', cleanupError);
             }
+        }
+    }
+    
+    /**
+     * Validate user is properly registered in database
+     */
+    async validateUserRegistration(user) {
+        try {
+            if (!user || !user.telegram_id) {
+                return false;
+            }
+            
+            // Skip validation for local users (offline mode)
+            if (user.is_local) {
+                this.logger.info('User is in local mode, skipping database validation');
+                return true;
+            }
+            
+            // Try to get user profile from database
+            const userService = this.container.get('userService');
+            const profile = await userService.getUserProfile(user.telegram_id);
+            
+            return !!(profile && profile.success && profile.user);
+            
+        } catch (error) {
+            this.logger.warn('User registration validation failed', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Ensure user exists in database
+     */
+    async ensureUserInDatabase(user) {
+        try {
+            if (!user || !user.telegram_id) {
+                throw new Error('Invalid user data for database registration');
+            }
+            
+            this.logger.info('Ensuring user exists in database', { userId: user.telegram_id });
+            
+            // Get repository and try to create user
+            const repository = this.container.get('repository');
+            
+            if (!repository || repository.constructor.name === 'MockRepository') {
+                this.logger.warn('Using mock repository - user will not be saved to database');
+                return true;
+            }
+            
+            // Try to create user using the database function
+            const result = await repository.execute('create_user', {
+                p_telegram_id: user.telegram_id,
+                p_username: user.username || `User${user.telegram_id}`,
+                p_first_name: user.first_name || null,
+                p_last_name: user.last_name || null
+            });
+            
+            if (result && result.success) {
+                this.logger.info('User successfully ensured in database', {
+                    userId: user.telegram_id,
+                    created: result.created,
+                    message: result.message
+                });
+                return true;
+            } else {
+                throw new Error(`Database user creation failed: ${result?.error || 'Unknown error'}`);
+            }
+            
+        } catch (error) {
+            this.logger.error('Failed to ensure user in database', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Test user's database access and permissions
+     */
+    async testUserDatabaseAccess(user) {
+        try {
+            if (!user || user.is_local) {
+                return true; // Skip test for local users
+            }
+            
+            this.logger.info('Testing user database access', { userId: user.telegram_id });
+            
+            // Test 1: Can access gifts
+            const giftService = this.container.get('giftService');
+            await giftService.getAvailableGifts();
+            
+            // Test 2: Can access user profile
+            const userService = this.container.get('userService');
+            await userService.getUserProfile(user.telegram_id);
+            
+            this.logger.info('Database access test successful');
+            return true;
+            
+        } catch (error) {
+            this.logger.warn('Database access test failed', error);
+            // Don't throw error, just log warning
+            return false;
         }
     }
     
