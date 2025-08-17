@@ -14,6 +14,7 @@ class EventBus extends window.Interfaces.IEventBus {
         this._initializing = false;
         this._initialized = false;
         this._readyPromise = null;
+        this.isInitialized = false; // For ServiceValidator compatibility
         
         // Start initialization
         this.initialize();
@@ -32,6 +33,9 @@ class EventBus extends window.Interfaces.IEventBus {
             setTimeout(() => {
                 this._initialized = true;
                 this._initializing = false;
+                
+                // Also set isInitialized for ServiceValidator compatibility
+                this.isInitialized = true;
                 
                 if (this.debug) {
                     console.log('📢 EventBus initialized and ready');

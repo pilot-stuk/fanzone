@@ -28,6 +28,12 @@ class ServiceValidator {
         
         // Check if service has initialization state
         if ('isInitialized' in service && !service.isInitialized) {
+            // Special handling for EventBus - check if it's ready instead
+            if (name === 'EventBus' && typeof service.isReady === 'function' && service.isReady()) {
+                // EventBus is ready, consider it initialized
+                return true;
+            }
+            
             const error = new Error(`${name} service is not initialized`);
             error.serviceName = name;
             error.validationType = 'not_initialized';
@@ -35,11 +41,22 @@ class ServiceValidator {
         }
         
         // Check if service has required methods (if it has an initialize method, it should be initialized)
-        if (typeof service.initialize === 'function' && !service.isInitialized) {
-            const error = new Error(`${name} service exists but is not properly initialized`);
-            error.serviceName = name;
-            error.validationType = 'initialization_required';
-            throw error;
+        if (typeof service.initialize === 'function') {
+            // Special handling for EventBus
+            if (name === 'EventBus') {
+                // For EventBus, check if it's ready instead of isInitialized
+                if (typeof service.isReady === 'function' && !service.isReady()) {
+                    const error = new Error(`${name} service exists but is not ready`);
+                    error.serviceName = name;
+                    error.validationType = 'not_ready';
+                    throw error;
+                }
+            } else if (!service.isInitialized) {
+                const error = new Error(`${name} service exists but is not properly initialized`);
+                error.serviceName = name;
+                error.validationType = 'initialization_required';
+                throw error;
+            }
         }
         
         return true;
@@ -192,7 +209,13 @@ class ServiceValidator {
         // Check initialization
         if ('isInitialized' in service) {
             health.initialized = service.isInitialized;
-            if (!service.isInitialized) {
+            
+            // Special handling for EventBus
+            if (!service.isInitialized && name === 'EventBus' && typeof service.isReady === 'function') {
+                health.initialized = service.isReady();
+            }
+            
+            if (!health.initialized) {
                 health.issues.push('Service not initialized');
             }
         } else {
