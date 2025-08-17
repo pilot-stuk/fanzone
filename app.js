@@ -63,10 +63,11 @@ class FanZoneApplication {
             // Load registration state from localStorage
             this.loadRegistrationState();
             
-            // FORCE CLEAR: In Telegram, ensure no auto-registration bypass
-            if (this.platformAdapter.isAvailable() && !this.userRegistrationState.registrationTimestamp) {
-                // If in Telegram but no valid registration timestamp, force clear everything
-                this.logger.warn('Telegram app detected with invalid registration state, forcing clear');
+            // FORCE CLEAR: Only clear if there's actually corrupted state (not just absent state)
+            const hasStoredState = localStorage.getItem('fanzone_registration_state');
+            if (this.platformAdapter.isAvailable() && hasStoredState && !this.userRegistrationState.registrationTimestamp) {
+                // If in Telegram and there IS stored state but no valid timestamp, then it's corrupted - clear it
+                this.logger.warn('Telegram app detected with corrupted registration state, forcing clear');
                 localStorage.removeItem('fanzone_registration_state');
                 localStorage.removeItem('fanzone_auth_token');
                 localStorage.removeItem('fanzone_current_user');
