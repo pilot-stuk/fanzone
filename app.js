@@ -63,16 +63,23 @@ class FanZoneApplication {
             // Setup event handlers
             this.setupEventHandlers();
             
-            // Try to authenticate user first (non-blocking)
+            // DO NOT authenticate during initialization - only load existing user if any
+            // Authentication (which creates users) should only happen on button click
             try {
-                await this.authService.authenticate();
-                this.logger.info('User authenticated during initialization');
-            } catch (authError) {
-                this.logger.info('Initial authentication skipped, user will authenticate on button click');
-                // Ensure button will be shown for unregistered users even if auth fails
-                if (!this.isUserFullyRegistered()) {
-                    this.logger.info('User not registered, will show Start Collecting button');
+                // Only try to get existing authenticated user, don't create new one
+                const existingUser = this.authService.getCurrentUser();
+                if (existingUser) {
+                    this.logger.info('Existing authenticated user found', { userId: existingUser.id });
+                } else {
+                    this.logger.info('No authenticated user, waiting for Start Collection button click');
                 }
+            } catch (error) {
+                this.logger.info('No existing authentication found');
+            }
+            
+            // Check if user is registered (from localStorage)
+            if (!this.isUserFullyRegistered()) {
+                this.logger.info('User not registered, will show Start Collecting button');
             }
             
             // Initialize UI
@@ -443,20 +450,30 @@ class FanZoneApplication {
      */
     async setupTelegramUI() {
         try {
-            if (!this.platformAdapter.isAvailable()) {
-                this.logger.debug('Platform adapter not available, skipping Telegram UI setup');
-                return;
-            }
-            
-            // Check registration state first
+            // Check registration state first - this is most important
             const isRegistered = this.isUserFullyRegistered();
+            this.logger.info('Setting up Telegram UI', {
+                isRegistered,
+                registrationState: this.userRegistrationState,
+                platformAvailable: this.platformAdapter.isAvailable()
+            });
             
-            // Always show button for unregistered users, regardless of auth status
+            // Show button for unregistered users, even in fallback mode
             if (!isRegistered) {
-                await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
+                const buttonShown = await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
                     await this.handleMainButtonClick();
                 });
-                this.logger.info('Showing Start Collecting button - user not registered');
+                
+                this.logger.info('Start Collecting button setup', { 
+                    buttonShown,
+                    isRegistered: false,
+                    platformAvailable: this.platformAdapter.isAvailable()
+                });
+                
+                // If button couldn't be shown (e.g., web version), show alternative
+                if (!buttonShown && !this.platformAdapter.isAvailable()) {
+                    this.logger.info('Platform button not available, user must use web interface');
+                }
             } else {
                 // Only hide for registered users
                 await this.platformAdapter.hideMainButton();
@@ -585,9 +602,12 @@ class FanZoneApplication {
                 // Success - navigate to gifts (this will refresh the controller)
                 this.navigateToPage('gifts');
                 
-                // Force refresh of gifts controller to recognize new registration state
-                if (this.giftsController && this.giftsController.renderGifts) {
-                    this.giftsController.renderGifts();
+                // Force complete reload of gifts controller after registration
+                if (this.giftsController) {
+                    // Re-initialize to load fresh data with proper authentication
+                    this.giftsController.isInitialized = false;
+                    await this.giftsController.initialize();
+                    this.logger.info('Gifts controller reinitialized after registration');
                 }
                 
                 // Show success message

@@ -2410,6 +2410,28 @@ body.theme-dark .telegram-list-item:hover {
     50% { opacity: 0.6; }
 }
 
+.start-collecting-web {
+    margin-top: 24px;
+    padding: 16px 32px;
+    font-size: 18px;
+    font-weight: 600;
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, white);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.start-collecting-web:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(51, 144, 236, 0.3);
+}
+
+.start-collecting-web:active {
+    transform: translateY(0);
+}
+
 /* Fix: Enhanced mobile improvements for Telegram */
 @media (max-width: 480px) {
     .gifts-grid {

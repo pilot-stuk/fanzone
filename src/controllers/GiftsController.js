@@ -75,24 +75,27 @@ class GiftsController extends ControllerBase {
             const authService = window.DIContainer.get('authService');
             const currentUser = authService.getCurrentUser();
             
-            if (!currentUser) {
-                throw new Error('No authenticated user');
+            // Load available gifts regardless of user authentication
+            this.gifts = await this.giftService.getAvailableGifts();
+            
+            // Load user gifts only if authenticated
+            if (currentUser) {
+                this.logger.info('Loading user gifts', { userId: currentUser.id });
+                const userGifts = await this.giftService.getUserGifts(currentUser.telegram_id || currentUser.id);
+                this.userGifts = userGifts.map(ug => ug.gift_id || ug.gift?.id);
+            } else {
+                this.logger.info('No authenticated user, showing gifts without user data');
+                this.userGifts = [];
             }
-            
-            // Load gifts and user gifts in parallel
-            const [gifts, userGifts] = await Promise.all([
-                this.giftService.getAvailableGifts(),
-                this.giftService.getUserGifts(currentUser.telegram_id || currentUser.id)
-            ]);
-            
-            this.gifts = gifts;
-            this.userGifts = userGifts.map(ug => ug.gift_id || ug.gift?.id);
             
             this.filterGifts();
             
         } catch (error) {
             this.logger.error('Failed to load gifts data', error);
-            throw error;
+            // Don't throw - show what we can
+            this.gifts = this.gifts || [];
+            this.userGifts = this.userGifts || [];
+            this.filterGifts();
         }
     }
     
@@ -267,18 +270,32 @@ class GiftsController extends ControllerBase {
      * Render registration prompt
      */
     renderRegistrationPrompt() {
+        // Check if we're in web mode (no Telegram button available)
+        const platformAdapter = window.DIContainer.get('platformAdapter');
+        const isWebMode = !platformAdapter.isAvailable();
+        
         return `
             <div class="registration-prompt">
                 <div class="empty-state">
                     <div class="empty-icon">🔒</div>
                     <h2>Registration Required</h2>
-                    <p>Please click the "Start Collecting" button below to unlock gift collection!</p>
+                    <p>Please click the "Start Collecting" button to unlock gift collection!</p>
                     <div class="registration-benefits">
                         <div class="benefit">✨ Access exclusive gifts</div>
                         <div class="benefit">🎁 Start your collection</div>
                         <div class="benefit">🏆 Compete on leaderboard</div>
                     </div>
-                    <p class="hint">👆 Click the button at the bottom to get started!</p>
+                    ${isWebMode ? `
+                        <button class="btn btn-primary start-collecting-web" onclick="
+                            if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                                window.FanZoneApp.handleMainButtonClick();
+                            }
+                        ">
+                            🎁 Start Collecting!
+                        </button>
+                    ` : `
+                        <p class="hint">👆 Click the button at the bottom to get started!</p>
+                    `}
                 </div>
             </div>
         `;
