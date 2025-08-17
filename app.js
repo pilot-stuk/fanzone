@@ -774,6 +774,9 @@ class FanZoneApplication {
                 // Persist registration state with platform context
                 localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
                 
+                // Force reload of app registration state to ensure it's fresh
+                this.loadRegistrationState();
+                
                 // Show success message immediately
                 this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
                 
@@ -785,6 +788,14 @@ class FanZoneApplication {
                 if (this.giftsController) {
                     // Re-initialize to load fresh data with proper authentication
                     this.giftsController.isInitialized = false;
+                    
+                    // Debug registration state before reinitializing
+                    this.logger.info('Before gifts controller reinit', {
+                        appRegistered: this.isUserFullyRegistered(),
+                        localStorage: localStorage.getItem('fanzone_registration_state'),
+                        userState: this.userRegistrationState
+                    });
+                    
                     await this.giftsController.initialize();
                     this.logger.info('Gifts controller reinitialized after registration');
                 } else {

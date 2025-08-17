@@ -259,7 +259,9 @@ class GiftsController extends ControllerBase {
             isRegistered,
             isLoading: this.isLoading,
             giftsCount: this.filteredGifts.length,
-            hasGrid: !!grid
+            hasGrid: !!grid,
+            appRegistrationCheck: window.FanZoneApp?.isUserFullyRegistered?.(),
+            localStorageState: localStorage.getItem('fanzone_registration_state')
         });
         
         if (this.isLoading) {
