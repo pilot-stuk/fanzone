@@ -463,8 +463,13 @@ class FanZoneApplication {
      */
     async initializePage(page) {
         try {
+            this.logger.info(`🚀 Initializing page: ${page}`);
             switch (page) {
                 case 'gifts':
+                    this.logger.info('🎁 About to initialize gifts controller', {
+                        controllerExists: !!this.giftsController,
+                        controllerType: typeof this.giftsController
+                    });
                     await this.giftsController?.initialize();
                     break;
                 case 'profile':
@@ -474,8 +479,9 @@ class FanZoneApplication {
                     await this.leaderboardController?.initialize();
                     break;
             }
+            this.logger.info(`✅ Page ${page} initialized successfully`);
         } catch (error) {
-            this.logger.error(`Failed to initialize ${page} page`, error);
+            this.logger.error(`❌ Failed to initialize ${page} page`, error);
             this.showToast(`Failed to load ${page}`, 'error');
         }
     }

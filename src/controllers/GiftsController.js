@@ -46,7 +46,20 @@ class GiftsController extends ControllerBase {
         if (this.isInitialized) return;
         
         try {
-            this.logger.debug('Initializing gifts controller');
+            this.logger.info('🎁 Initializing gifts controller...');
+            
+            // Check if DOM element exists
+            const container = document.getElementById('gifts-container');
+            this.logger.info('Gifts controller DOM check', {
+                containerExists: !!container,
+                containerId: container?.id,
+                containerClass: container?.className
+            });
+            
+            if (!container) {
+                this.logger.error('❌ Gifts container element not found during initialization!');
+                throw new Error('Gifts container DOM element missing');
+            }
             
             this.showLoadingState();
             
@@ -59,10 +72,10 @@ class GiftsController extends ControllerBase {
             this.renderGifts();
             
             this.isInitialized = true;
-            this.logger.debug('Gifts controller initialized');
+            this.logger.info('✅ Gifts controller initialized successfully');
             
         } catch (error) {
-            this.logger.error('Failed to initialize gifts controller', error);
+            this.logger.error('❌ Failed to initialize gifts controller', error);
             this.showError('Failed to load gifts');
         }
     }
@@ -255,13 +268,14 @@ class GiftsController extends ControllerBase {
         // Check if user is registered
         const isRegistered = this.checkUserRegistration();
         
-        this.logger.info('Rendering gifts', {
+        this.logger.info('🎨 Rendering gifts', {
             isRegistered,
             isLoading: this.isLoading,
             giftsCount: this.filteredGifts.length,
             hasGrid: !!grid,
             appRegistrationCheck: window.FanZoneApp?.isUserFullyRegistered?.(),
-            localStorageState: localStorage.getItem('fanzone_registration_state')
+            localStorageState: localStorage.getItem('fanzone_registration_state'),
+            containerHtml: grid?.innerHTML?.substring(0, 100) + '...'
         });
         
         if (this.isLoading) {
@@ -271,7 +285,14 @@ class GiftsController extends ControllerBase {
         
         // Show registration prompt if not registered
         if (!isRegistered) {
-            grid.innerHTML = this.renderRegistrationPrompt();
+            this.logger.info('🔒 Showing registration prompt for unregistered user');
+            const promptHtml = this.renderRegistrationPrompt();
+            this.logger.info('📝 Registration prompt HTML generated', {
+                htmlLength: promptHtml.length,
+                htmlPreview: promptHtml.substring(0, 200) + '...'
+            });
+            grid.innerHTML = promptHtml;
+            this.logger.info('✅ Registration prompt rendered to DOM');
             return;
         }
         
@@ -291,11 +312,12 @@ class GiftsController extends ControllerBase {
         const platformAdapter = window.DIContainer.get('platformAdapter');
         const isWebMode = !platformAdapter.isAvailable();
         
-        this.logger.info('Rendering registration prompt', {
+        this.logger.info('🔧 Rendering registration prompt', {
             isWebMode,
             platformAvailable: platformAdapter.isAvailable(),
             hasGlobalHandler: !!window.handleStartCollecting,
-            hasFanZoneApp: !!window.FanZoneApp
+            hasFanZoneApp: !!window.FanZoneApp,
+            mainButtonClickHandler: !!(window.FanZoneApp && window.FanZoneApp.handleMainButtonClick)
         });
         
         return `
