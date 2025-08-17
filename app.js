@@ -60,6 +60,20 @@ class FanZoneApplication {
             // Load registration state from localStorage
             this.loadRegistrationState();
             
+            // FORCE CLEAR: In Telegram, ensure no auto-registration bypass
+            if (this.platformAdapter.isAvailable() && !this.userRegistrationState.registrationTimestamp) {
+                // If in Telegram but no valid registration timestamp, force clear everything
+                this.logger.warn('Telegram app detected with invalid registration state, forcing clear');
+                localStorage.removeItem('fanzone_registration_state');
+                localStorage.removeItem('fanzone_auth_token');
+                localStorage.removeItem('fanzone_current_user');
+                this.userRegistrationState = {
+                    hasClickedStart: false,
+                    isFullyRegistered: false,
+                    registrationTimestamp: null
+                };
+            }
+            
             // Setup event handlers
             this.setupEventHandlers();
             

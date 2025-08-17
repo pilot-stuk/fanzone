@@ -375,14 +375,23 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
         
         // Main button handler - Fixed to properly handle authentication
         this.webApp.MainButton.onClick(() => {
+            console.log('🔘 Main button clicked', {
+                hasCallback: !!this.mainButtonCallback,
+                isProgressVisible: this.webApp.MainButton.isProgressVisible,
+                buttonText: this.webApp.MainButton.text
+            });
+            
             // Prevent multiple clicks while processing
             if (this.webApp.MainButton.isProgressVisible) {
+                console.log('⏳ Button click ignored - already processing');
                 return;
             }
             
             if (this.mainButtonCallback) {
+                console.log('🚀 Executing main button callback');
                 this.mainButtonCallback();
             } else {
+                console.log('📡 No callback set, emitting default event');
                 // Default action - ensure user is authenticated first
                 window.EventBus?.emit('mainbutton:clicked');
             }
@@ -505,7 +514,12 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
                 this.webApp.MainButton.show();
             }
             
-            console.log('✅ Main button shown:', { text, hasCallback: !!callback });
+            console.log('✅ Main button shown:', { 
+                text, 
+                hasCallback: !!callback,
+                isVisible: this.webApp.MainButton.isVisible,
+                callbackStored: !!this.mainButtonCallback
+            });
             return true;
             
         } catch (error) {

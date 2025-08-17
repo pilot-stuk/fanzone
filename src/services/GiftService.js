@@ -373,9 +373,17 @@ class GiftService extends window.Interfaces.IGiftService {
      */
     checkUserRegistrationState() {
         try {
+            const debug = {
+                hasWindow: typeof window !== 'undefined',
+                hasFanZoneApp: !!(window.FanZoneApp),
+                hasIsUserFullyRegistered: !!(window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered),
+                localStorageState: localStorage.getItem('fanzone_registration_state')
+            };
+            
             // Try to get registration state from global app instance
             if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
                 const isRegistered = window.FanZoneApp.isUserFullyRegistered();
+                this.logger.debug('Registration check via app instance', { isRegistered, debug });
                 return { isRegistered, source: 'app_instance' };
             }
             
@@ -384,10 +392,12 @@ class GiftService extends window.Interfaces.IGiftService {
             if (saved) {
                 const state = JSON.parse(saved);
                 const isRegistered = state.hasClickedStart && state.isFullyRegistered;
+                this.logger.debug('Registration check via localStorage', { isRegistered, state, debug });
                 return { isRegistered, source: 'localStorage' };
             }
             
             // Default to not registered
+            this.logger.debug('Registration check defaulted to false', { debug });
             return { isRegistered: false, source: 'default' };
             
         } catch (error) {
