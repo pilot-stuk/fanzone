@@ -487,6 +487,19 @@ class GiftService extends window.Interfaces.IGiftService {
     checkAppInstanceRegistration() {
         if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
             const isRegistered = window.FanZoneApp.isUserFullyRegistered();
+            // If app instance claims registration but we have stale data, force app to refresh state
+            if (isRegistered) {
+                const timestampValidation = this.checkTimestampValidation();
+                if (timestampValidation && !timestampValidation.isRegistered && timestampValidation.reason === 'expired') {
+                    // Force app to reload registration state since timestamp is expired
+                    if (window.FanZoneApp.loadRegistrationState) {
+                        window.FanZoneApp.loadRegistrationState();
+                        // Re-check after forcing reload
+                        const refreshedRegistration = window.FanZoneApp.isUserFullyRegistered();
+                        return { isRegistered: refreshedRegistration, method: 'app_instance_refreshed' };
+                    }
+                }
+            }
             return { isRegistered, method: 'app_instance' };
         }
         return null;
@@ -530,10 +543,14 @@ class GiftService extends window.Interfaces.IGiftService {
                 const maxAge = 24 * 60 * 60 * 1000; // 24 hours
                 
                 if (stateAge > maxAge) {
-                    this.logger.warn('Registration state is too old', { 
+                    this.logger.warn('Registration state is too old, clearing it', { 
                         ageHours: Math.round(stateAge / (60 * 60 * 1000)),
                         maxAgeHours: 24 
                     });
+                    // Actually clear the stale data from localStorage
+                    localStorage.removeItem('fanzone_registration_state');
+                    localStorage.removeItem('fanzone_current_user');
+                    localStorage.removeItem('fanzone_auth_token');
                     return { isRegistered: false, method: 'timestamp', reason: 'expired' };
                 }
                 
