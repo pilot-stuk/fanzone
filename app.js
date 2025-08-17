@@ -496,6 +496,12 @@ class FanZoneApplication {
             });
             
             // Show button for unregistered users with platform-specific handling
+            console.log('🎮 Setup UI - Registration check result:', {
+                isRegistered,
+                willShowButton: !isRegistered,
+                platformAvailable: this.platformAdapter.isAvailable()
+            });
+            
             if (!isRegistered) {
                 if (this.platformAdapter.isAvailable()) {
                     // Telegram platform - show main button with retry logic
@@ -1113,12 +1119,16 @@ class FanZoneApplication {
     loadRegistrationState() {
         try {
             const saved = localStorage.getItem('fanzone_registration_state');
+            console.log('📋 Loading registration state from localStorage:', saved);
+            
             if (saved) {
                 const state = JSON.parse(saved);
+                console.log('📋 Parsed registration state:', state);
                 
                 // Don't clear state just because of platform mismatch
                 // Users might switch between web and Telegram
                 if (state.hasClickedStart && state.isFullyRegistered) {
+                    console.log('✅ Valid registration state found, preserving it');
                     this.logger?.info('Valid registration state found, preserving it', {
                         platform: state.platform,
                         timestamp: state.registrationTimestamp
@@ -1128,14 +1138,19 @@ class FanZoneApplication {
                 }
                 
                 // Only clear if state is incomplete
+                console.log('⚠️ Incomplete registration state found, resetting');
                 this.logger?.warn('Incomplete registration state found', state);
+            } else {
+                console.log('📋 No saved registration state found');
             }
             
             // No valid state found
             this.resetRegistrationState();
+            console.log('🔄 Registration state reset to default');
             this.logger?.info('No valid registration state, user needs to register');
             
         } catch (error) {
+            console.error('❌ Failed to load registration state:', error);
             this.logger?.warn('Failed to load registration state', error);
             this.resetRegistrationState();
         }
@@ -1159,9 +1174,20 @@ class FanZoneApplication {
      * Check if user has completed registration process
      */
     isUserFullyRegistered() {
-        return this.userRegistrationState && 
+        const result = this.userRegistrationState && 
                this.userRegistrationState.hasClickedStart && 
                this.userRegistrationState.isFullyRegistered;
+        
+        // Debug logging to understand what's happening
+        console.log('🔍 Registration Check:', {
+            hasState: !!this.userRegistrationState,
+            hasClickedStart: this.userRegistrationState?.hasClickedStart,
+            isFullyRegistered: this.userRegistrationState?.isFullyRegistered,
+            finalResult: result,
+            registrationState: this.userRegistrationState
+        });
+        
+        return result;
     }
     
     /**
@@ -1911,11 +1937,39 @@ class FanZoneApplication {
             tools: ['triggerRegistration', 'inspectRegistration', 'checkButtonVisibility', 'resetRegistrationForTesting']
         });
         
+        // Add complete state cleaner
+        window.clearAllFanZoneData = () => {
+            console.log('🧹 Clearing ALL FanZone data...');
+            
+            // Clear all localStorage
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('fanzone')) {
+                    keys.push(key);
+                }
+            }
+            
+            keys.forEach(key => {
+                console.log(`Removing: ${key}`);
+                localStorage.removeItem(key);
+            });
+            
+            // Reset app state
+            if (this.resetRegistrationState) {
+                this.resetRegistrationState();
+            }
+            
+            console.log('✅ All FanZone data cleared - reload page for fresh start');
+            return { cleared: keys };
+        };
+        
         console.log('💡 Debug tools available:');
         console.log('  window.inspectRegistration() - Check registration state');
         console.log('  window.triggerRegistration() - Manually register');
         console.log('  window.checkButtonVisibility() - Check button state');
         console.log('  window.resetRegistrationForTesting() - Clear registration');
+        console.log('  window.clearAllFanZoneData() - Nuclear option: clear everything');
     }
 }
 
