@@ -222,29 +222,53 @@
         };
     }
     
-    // 6. Add initialization complete handler
+    // 6. Add initialization complete handler with more aggressive checking
+    let checkAttempts = 0;
+    const maxAttempts = 100; // 10 seconds at 100ms intervals
+    
     const checkAppReady = setInterval(() => {
+        checkAttempts++;
+        
         if (window.FanZoneApp && window.FanZoneApp.isInitialized) {
             clearInterval(checkAppReady);
             
             console.log('🚀 FanZone app initialized, checking registration state...');
             
-            // Check if user needs to register
-            if (!window.FanZoneApp.isUserFullyRegistered()) {
-                console.log('📝 User not registered, ensuring button is visible');
-                
-                // Re-setup UI to ensure button is shown
-                window.FanZoneApp.setupTelegramUI().catch(error => {
-                    console.error('Failed to setup UI:', error);
-                });
-                
-                // For web mode, ensure the button is visible
-                const webButtons = document.querySelectorAll('.start-collecting-web');
-                webButtons.forEach(btn => {
-                    btn.style.display = 'inline-block';
-                    btn.onclick = window.handleStartCollecting;
-                });
-            }
+            // Give a small delay for everything to settle
+            setTimeout(() => {
+                // Check if user needs to register
+                if (!window.FanZoneApp.isUserFullyRegistered()) {
+                    console.log('📝 User not registered, ensuring button is visible');
+                    
+                    // Re-setup UI to ensure button is shown
+                    window.FanZoneApp.setupTelegramUI().catch(error => {
+                        console.error('Failed to setup UI:', error);
+                    });
+                    
+                    // For web mode, ensure the button is visible
+                    setTimeout(() => {
+                        const webButtons = document.querySelectorAll('.start-collecting-web');
+                        console.log(`🔍 Found ${webButtons.length} web buttons`);
+                        webButtons.forEach(btn => {
+                            btn.style.display = 'inline-block';
+                            btn.onclick = window.handleStartCollecting;
+                            console.log('✅ Web button configured');
+                        });
+                        
+                        // If no web buttons found, try to trigger gifts controller render
+                        if (webButtons.length === 0) {
+                            console.log('🔄 No web buttons found, triggering gifts controller render');
+                            if (window.FanZoneApp.giftsController) {
+                                window.FanZoneApp.giftsController.renderGifts();
+                            }
+                        }
+                    }, 500);
+                }
+            }, 200);
+            
+        } else if (checkAttempts >= maxAttempts) {
+            clearInterval(checkAppReady);
+            console.error('❌ App initialization timeout - manual check available via window.triggerRegistration()');
         }
     }, 100);
     
@@ -264,24 +288,123 @@
         }
     };
     
-    // 8. Add registration state inspector
+    // 8. Add comprehensive registration state inspector
     window.inspectRegistration = function() {
         const state = {
             appReady: !!(window.FanZoneApp && window.FanZoneApp.isInitialized),
             isRegistered: window.FanZoneApp?.isUserFullyRegistered() || false,
-            registrationState: window.FanZoneApp?.getRegistrationState() || null,
+            registrationState: window.FanZoneApp?.userRegistrationState || null,
             localStorage: localStorage.getItem('fanzone_registration_state'),
             platform: window.TelegramAdapter?.isAvailable() ? 'telegram' : 'web',
             mainButtonState: window.TelegramAdapter?.getMainButtonState() || null,
-            webButtonExists: document.querySelectorAll('.start-collecting-web').length > 0
+            webButtonExists: document.querySelectorAll('.start-collecting-web').length > 0,
+            webButtonsDetails: Array.from(document.querySelectorAll('.start-collecting-web')).map(btn => ({
+                visible: btn.style.display !== 'none',
+                hasOnclick: !!btn.onclick,
+                text: btn.textContent.trim()
+            })),
+            giftsControllerReady: !!(window.FanZoneApp?.giftsController?.isInitialized),
+            hasGlobalHandler: !!window.handleStartCollecting,
+            registrationPromptVisible: document.querySelector('.registration-prompt') !== null
         };
         
         console.log('📊 Registration State:', state);
+        console.table(state);
         return state;
     };
     
+    // 9. Add button forcer for emergencies
+    window.forceShowButton = function() {
+        console.log('🚨 Force showing registration button...');
+        
+        // Check if there's a registration prompt container
+        const giftsGrid = document.getElementById('gifts-grid');
+        if (giftsGrid && !document.querySelector('.start-collecting-web')) {
+            console.log('💉 Injecting registration button directly into gifts grid');
+            giftsGrid.innerHTML = `
+                <div class="registration-prompt">
+                    <div class="empty-state">
+                        <div class="empty-icon">🔒</div>
+                        <h2>Registration Required</h2>
+                        <p>Please click the "Start Collecting" button to unlock gift collection!</p>
+                        <button class="btn btn-primary start-collecting-web" onclick="window.handleStartCollecting()" style="display: inline-block;">
+                            🎁 Start Collecting!
+                        </button>
+                    </div>
+                </div>
+            `;
+            console.log('✅ Registration button injected');
+        }
+        
+        // Also try to show Telegram button
+        if (window.FanZoneApp && window.FanZoneApp.platformAdapter) {
+            try {
+                window.FanZoneApp.platformAdapter.showMainButton('🎁 Start Collecting!', window.handleStartCollecting);
+                console.log('✅ Telegram button forced');
+            } catch (error) {
+                console.error('❌ Failed to force Telegram button:', error);
+            }
+        }
+    };
+    
+    // 10. Add CSS styles for web buttons to ensure they're visible
+    const style = document.createElement('style');
+    style.textContent = `
+        .start-collecting-web {
+            display: inline-block !important;
+            padding: 12px 24px;
+            background: #3390ec;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 16px auto;
+            transition: background-color 0.2s;
+        }
+        
+        .start-collecting-web:hover {
+            background: #2980d6;
+        }
+        
+        .registration-prompt {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        .registration-prompt .empty-state {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        .registration-prompt .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .registration-prompt h2 {
+            margin: 16px 0;
+            color: var(--tg-theme-text-color, #333);
+        }
+        
+        .registration-prompt p {
+            margin-bottom: 24px;
+            color: var(--tg-theme-hint-color, #666);
+        }
+    `;
+    document.head.appendChild(style);
+    
     console.log('✅ Registration fixes applied successfully');
-    console.log('💡 Use window.inspectRegistration() to check state');
-    console.log('💡 Use window.triggerRegistration() to manually register');
+    console.log('💡 Debug tools available:');
+    console.log('  window.inspectRegistration() - Check registration state');
+    console.log('  window.triggerRegistration() - Manually register');
+    console.log('  window.forceShowButton() - Force show button');
+    
+    // Auto-check after 3 seconds
+    setTimeout(() => {
+        console.log('🔍 Auto-checking registration state...');
+        window.inspectRegistration();
+    }, 3000);
     
 })();
