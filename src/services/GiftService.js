@@ -319,6 +319,20 @@ class GiftService extends window.Interfaces.IGiftService {
                 return { valid: false, message: 'User not found' };
             }
             
+            // Check if user has completed registration process
+            const registrationState = this.checkUserRegistrationState();
+            if (!registrationState.isRegistered) {
+                this.logger.info('Purchase blocked - user not registered', {
+                    userId,
+                    registrationState
+                });
+                return { 
+                    valid: false, 
+                    message: 'Please click "Start Collecting" to enable gift purchases',
+                    requiresRegistration: true
+                };
+            }
+            
             if (!gift) {
                 return { valid: false, message: 'Gift not found' };
             }
@@ -351,6 +365,34 @@ class GiftService extends window.Interfaces.IGiftService {
         } catch (error) {
             this.logger.error('Failed to validate purchase', error, { userId, giftId });
             return { valid: false, message: 'Validation failed' };
+        }
+    }
+    
+    /**
+     * Check user registration state to prevent purchase bypass
+     */
+    checkUserRegistrationState() {
+        try {
+            // Try to get registration state from global app instance
+            if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
+                const isRegistered = window.FanZoneApp.isUserFullyRegistered();
+                return { isRegistered, source: 'app_instance' };
+            }
+            
+            // Fallback to localStorage check
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                const isRegistered = state.hasClickedStart && state.isFullyRegistered;
+                return { isRegistered, source: 'localStorage' };
+            }
+            
+            // Default to not registered
+            return { isRegistered: false, source: 'default' };
+            
+        } catch (error) {
+            this.logger.warn('Failed to check registration state', error);
+            return { isRegistered: false, source: 'error' };
         }
     }
     

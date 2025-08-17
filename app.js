@@ -21,6 +21,13 @@ class FanZoneApplication {
         this.giftsController = null;
         this.profileController = null;
         this.leaderboardController = null;
+        
+        // Registration State Tracking
+        this.userRegistrationState = {
+            hasClickedStart: false,
+            isFullyRegistered: false,
+            registrationTimestamp: null
+        };
     }
     
     /**
@@ -49,6 +56,9 @@ class FanZoneApplication {
             
             // Get services from container (DIContainer should already be initialized)
             await this.injectServices();
+            
+            // Load registration state from localStorage
+            this.loadRegistrationState();
             
             // Setup event handlers
             this.setupEventHandlers();
@@ -541,6 +551,16 @@ class FanZoneApplication {
                 // Show success message
                 this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
                 
+                // Mark user as fully registered
+                this.userRegistrationState = {
+                    hasClickedStart: true,
+                    isFullyRegistered: true,
+                    registrationTimestamp: new Date().toISOString()
+                };
+                
+                // Persist registration state
+                localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
+                
                 // Hide loading and main button after successful navigation
                 await this.platformAdapter.setMainButtonLoading(false);
                 await this.platformAdapter.hideMainButton();
@@ -854,6 +874,45 @@ class FanZoneApplication {
     
     formatPoints(points) {
         return new Intl.NumberFormat().format(points || 0);
+    }
+    
+    /**
+     * Load registration state from localStorage
+     */
+    loadRegistrationState() {
+        try {
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                this.userRegistrationState = JSON.parse(saved);
+                this.logger?.info('Registration state loaded', this.userRegistrationState);
+            } else {
+                this.logger?.info('No saved registration state found');
+            }
+        } catch (error) {
+            this.logger?.warn('Failed to load registration state', error);
+            // Reset to default state on error
+            this.userRegistrationState = {
+                hasClickedStart: false,
+                isFullyRegistered: false,
+                registrationTimestamp: null
+            };
+        }
+    }
+    
+    /**
+     * Check if user has completed registration process
+     */
+    isUserFullyRegistered() {
+        return this.userRegistrationState && 
+               this.userRegistrationState.hasClickedStart && 
+               this.userRegistrationState.isFullyRegistered;
+    }
+    
+    /**
+     * Get registration state for external validation
+     */
+    getRegistrationState() {
+        return { ...this.userRegistrationState };
     }
     
     truncateText(text, maxLength) {

@@ -459,7 +459,18 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
             // Enhanced error messages
             let errorMessage = 'Purchase failed';
             
-            if (error.message.includes('insufficient points')) {
+            if (error.message.includes('Start Collecting')) {
+                errorMessage = '⚠️ Please click "Start Collecting" first to enable gift purchases!';
+                
+                // Show main button to guide user to registration
+                const platformAdapter = window.DIContainer.get('platformAdapter');
+                platformAdapter.showMainButton('Start Collecting', () => {
+                    if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                        window.FanZoneApp.handleMainButtonClick();
+                    }
+                });
+                
+            } else if (error.message.includes('insufficient points')) {
                 errorMessage = 'Not enough points to purchase this gift';
             } else if (error.message.includes('out of stock')) {
                 errorMessage = 'This gift is no longer available';
