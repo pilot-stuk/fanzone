@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Registration State</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .warning { background: #fff3cd; border-color: #ffeaa7; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Registration Debug Tool</h1>
+    
+    <div class="debug-section">
+        <h2>Environment Check</h2>
+        <div id="env-check"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Registration State</h2>
+        <div id="reg-state"></div>
+        <button onclick="checkRegistration()">Check Registration</button>
+        <button onclick="clearRegistration()">Clear Registration</button>
+        <button onclick="simulateRegistration()">Simulate Registration</button>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Platform Detection</h2>
+        <div id="platform-info"></div>
+        <button onclick="checkPlatform()">Check Platform</button>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Debug Log</h2>
+        <div id="debug-log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script>
+        let debugEntries = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            debugEntries.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+            updateDebugLog();
+            console.log(`[DebugTool] ${message}`);
+        }
+        
+        function updateDebugLog() {
+            document.getElementById('debug-log').innerHTML = 
+                `<pre>${debugEntries.slice(-10).join('\n')}</pre>`;
+        }
+        
+        function clearLog() {
+            debugEntries = [];
+            updateDebugLog();
+        }
+        
+        function checkEnvironment() {
+            const env = {
+                isTelegram: !!(window.Telegram && window.Telegram.WebApp),
+                hasTelegramData: !!(window.Telegram?.WebApp?.initData),
+                hasTelegramUser: !!(window.Telegram?.WebApp?.initDataUnsafe?.user),
+                hasLocalStorage: typeof localStorage !== 'undefined',
+                userAgent: navigator.userAgent,
+                location: window.location.href
+            };
+            
+            document.getElementById('env-check').innerHTML = `
+                <div>Telegram API: ${env.isTelegram ? '✅' : '❌'}</div>
+                <div>Telegram Data: ${env.hasTelegramData ? '✅' : '❌'}</div>
+                <div>Telegram User: ${env.hasTelegramUser ? '✅' : '❌'}</div>
+                <div>LocalStorage: ${env.hasLocalStorage ? '✅' : '❌'}</div>
+                <div>URL: ${env.location}</div>
+            `;
+            
+            log(`Environment checked: Telegram=${env.isTelegram}, Data=${env.hasTelegramData}, User=${env.hasTelegramUser}`);
+        }
+        
+        function checkRegistration() {
+            try {
+                const localStorage_state = localStorage.getItem('fanzone_registration_state');
+                const parsed_state = localStorage_state ? JSON.parse(localStorage_state) : null;
+                
+                const state = {
+                    hasLocalStorageState: !!localStorage_state,
+                    localStorageRaw: localStorage_state,
+                    parsedState: parsed_state,
+                    isRegistered: parsed_state ? (parsed_state.hasClickedStart && parsed_state.isFullyRegistered) : false,
+                    hasFanZoneApp: !!window.FanZoneApp,
+                    appRegistered: window.FanZoneApp ? window.FanZoneApp.isUserFullyRegistered?.() : 'N/A'
+                };
+                
+                document.getElementById('reg-state').innerHTML = `
+                    <div>LocalStorage State: ${state.hasLocalStorageState ? '✅' : '❌'}</div>
+                    <div>Is Registered (localStorage): ${state.isRegistered ? '✅' : '❌'}</div>
+                    <div>FanZone App Available: ${state.hasFanZoneApp ? '✅' : '❌'}</div>
+                    <div>App Registered: ${state.appRegistered === true ? '✅' : state.appRegistered === false ? '❌' : 'N/A'}</div>
+                    <pre>${JSON.stringify(state.parsedState, null, 2)}</pre>
+                `;
+                
+                log(`Registration state: localStorage=${state.isRegistered}, app=${state.appRegistered}`);
+                
+            } catch (error) {
+                document.getElementById('reg-state').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                log(`Registration check failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearRegistration() {
+            try {
+                localStorage.removeItem('fanzone_registration_state');
+                localStorage.removeItem('fanzone_auth_token');
+                localStorage.removeItem('fanzone_current_user');
+                log('Registration state cleared');
+                checkRegistration();
+            } catch (error) {
+                log(`Failed to clear registration: ${error.message}`, 'error');
+            }
+        }
+        
+        function simulateRegistration() {
+            try {
+                const state = {
+                    hasClickedStart: true,
+                    isFullyRegistered: true,
+                    registrationTimestamp: new Date().toISOString(),
+                    platform: window.Telegram?.WebApp ? 'telegram' : 'web',
+                    userId: Date.now(),
+                    registrationMethod: 'debug_simulation'
+                };
+                
+                localStorage.setItem('fanzone_registration_state', JSON.stringify(state));
+                log('Registration state simulated');
+                checkRegistration();
+            } catch (error) {
+                log(`Failed to simulate registration: ${error.message}`, 'error');
+            }
+        }
+        
+        function checkPlatform() {
+            try {
+                const platform = {
+                    isTelegram: !!(window.Telegram && window.Telegram.WebApp),
+                    telegramReady: window.Telegram?.WebApp?.isInitialized || false,
+                    mainButtonAvailable: !!(window.Telegram?.WebApp?.MainButton),
+                    userData: window.Telegram?.WebApp?.initDataUnsafe?.user || null,
+                    hasGlobalHandler: !!window.handleStartCollecting,
+                    hasFanZoneApp: !!window.FanZoneApp
+                };
+                
+                document.getElementById('platform-info').innerHTML = `
+                    <div>Is Telegram: ${platform.isTelegram ? '✅' : '❌'}</div>
+                    <div>Telegram Ready: ${platform.telegramReady ? '✅' : '❌'}</div>
+                    <div>Main Button: ${platform.mainButtonAvailable ? '✅' : '❌'}</div>
+                    <div>Global Handler: ${platform.hasGlobalHandler ? '✅' : '❌'}</div>
+                    <div>FanZone App: ${platform.hasFanZoneApp ? '✅' : '❌'}</div>
+                    ${platform.userData ? `<div>User ID: ${platform.userData.id}</div>` : ''}
+                `;
+                
+                log(`Platform: Telegram=${platform.isTelegram}, Button=${platform.mainButtonAvailable}, Handler=${platform.hasGlobalHandler}`);
+                
+            } catch (error) {
+                document.getElementById('platform-info').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                log(`Platform check failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Debug tool loaded');
+            checkEnvironment();
+            checkRegistration();
+            checkPlatform();
+        });
+    </script>
+</body>
+</html>

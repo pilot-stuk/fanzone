@@ -242,10 +242,20 @@ class GiftsController extends ControllerBase {
      */
     renderGifts() {
         const grid = document.getElementById('gifts-grid');
-        if (!grid) return;
+        if (!grid) {
+            this.logger.warn('Gifts grid element not found');
+            return;
+        }
         
         // Check if user is registered
         const isRegistered = this.checkUserRegistration();
+        
+        this.logger.info('Rendering gifts', {
+            isRegistered,
+            isLoading: this.isLoading,
+            giftsCount: this.filteredGifts.length,
+            hasGrid: !!grid
+        });
         
         if (this.isLoading) {
             grid.innerHTML = this.renderLoadingState();
@@ -274,6 +284,13 @@ class GiftsController extends ControllerBase {
         const platformAdapter = window.DIContainer.get('platformAdapter');
         const isWebMode = !platformAdapter.isAvailable();
         
+        this.logger.info('Rendering registration prompt', {
+            isWebMode,
+            platformAvailable: platformAdapter.isAvailable(),
+            hasGlobalHandler: !!window.handleStartCollecting,
+            hasFanZoneApp: !!window.FanZoneApp
+        });
+        
         return `
             <div class="registration-prompt">
                 <div class="empty-state">
@@ -287,7 +304,9 @@ class GiftsController extends ControllerBase {
                     </div>
                     ${isWebMode ? `
                         <button class="btn btn-primary start-collecting-web" onclick="
-                            if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                            if (window.handleStartCollecting) {
+                                window.handleStartCollecting();
+                            } else if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
                                 window.FanZoneApp.handleMainButtonClick();
                             }
                         ">
@@ -402,33 +421,43 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
      * Purchase a gift
      */
     checkUserRegistration() {
-        // Use GiftService's comprehensive validation
+        // For button display purposes, use the main app's registration check first
         try {
-            const registrationState = this.giftService.checkUserRegistrationState();
-            
-            // Log validation details for debugging
-            this.logger.debug('Controller registration check', {
-                isRegistered: registrationState.isRegistered,
-                source: registrationState.source,
-                validationCount: registrationState.validationResults?.length || 0
-            });
-            
-            return registrationState.isRegistered;
-            
-        } catch (error) {
-            this.logger.warn('Failed to check registration state via GiftService', error);
-            
-            // Fallback to simple localStorage check
-            try {
-                const saved = localStorage.getItem('fanzone_registration_state');
-                if (saved) {
-                    const state = JSON.parse(saved);
-                    return state.hasClickedStart && state.isFullyRegistered;
-                }
-            } catch (fallbackError) {
-                this.logger.warn('Fallback registration check failed', fallbackError);
+            // Check if main app is available and use its registration state
+            if (window.FanZoneApp && typeof window.FanZoneApp.isUserFullyRegistered === 'function') {
+                const isRegistered = window.FanZoneApp.isUserFullyRegistered();
+                this.logger.debug('Controller registration check via main app', {
+                    isRegistered,
+                    method: 'main_app'
+                });
+                return isRegistered;
             }
             
+            // Fallback to simple localStorage check for button display
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                const isRegistered = state.hasClickedStart && state.isFullyRegistered;
+                this.logger.debug('Controller registration check via localStorage', {
+                    isRegistered,
+                    method: 'localStorage',
+                    state: {
+                        hasClickedStart: state.hasClickedStart,
+                        isFullyRegistered: state.isFullyRegistered
+                    }
+                });
+                return isRegistered;
+            }
+            
+            // No registration state found - user is not registered
+            this.logger.debug('Controller registration check - no state found', {
+                isRegistered: false,
+                method: 'no_state'
+            });
+            return false;
+            
+        } catch (error) {
+            this.logger.warn('Failed to check registration state', error);
             return false;
         }
     }
@@ -469,11 +498,14 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
     
     async purchaseGift(giftId) {
         try {
-            // Check registration first
+            // Check registration first (simple check for UI)
             if (!this.checkUserRegistration()) {
                 this.showRegistrationRequired();
                 return;
             }
+            
+            // For actual purchase, use comprehensive validation through GiftService
+            // This will be checked again in the service layer with all security validations
             // Validate services are still available before critical operation
             if (window.ServiceValidator) {
                 window.ServiceValidator.validateService(this.giftService, 'GiftService');

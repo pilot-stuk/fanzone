@@ -112,7 +112,12 @@ class FanZoneApplication {
             if (!this.isUserFullyRegistered()) {
                 // For unregistered users, stay on gifts page but they'll see the lock screen
                 this.currentPage = 'gifts';
-                this.logger.info('User not registered, showing gifts page with registration prompt');
+                this.logger.info('User not registered, showing gifts page with registration prompt', {
+                    registrationState: this.userRegistrationState,
+                    isRegistered: this.isUserFullyRegistered(),
+                    platformAvailable: this.platformAdapter.isAvailable(),
+                    platformMode: this.platformAdapter.getModeInfo()
+                });
             }
             
             // Navigate to initial page
@@ -569,21 +574,38 @@ class FanZoneApplication {
      * Setup web-specific registration interface
      */
     setupWebRegistrationInterface() {
-        // Ensure web-specific registration elements are visible
+        this.logger.info('Setting up web registration interface');
+        
+        // The web button will be created by the GiftsController in renderRegistrationPrompt()
+        // We just need to ensure the click handler will work when elements are created
+        
+        // Store the registration handler globally so the GiftsController can use it
+        if (!window.handleStartCollecting) {
+            window.handleStartCollecting = async () => {
+                this.logger.info('Web Start Collecting button clicked');
+                try {
+                    await this.handleMainButtonClick();
+                } catch (error) {
+                    this.logger.error('Web Start Collecting failed:', error);
+                    this.showToast('Registration failed. Please try again.', 'error');
+                }
+            };
+        }
+        
+        // Also check if elements already exist and set them up
         const webRegistrationElements = document.querySelectorAll('.web-registration, .start-collecting-web');
         webRegistrationElements.forEach(element => {
             element.style.display = 'block';
             
             // Add click handler if not already present
             if (!element.onclick) {
-                element.onclick = async () => {
-                    await this.handleMainButtonClick();
-                };
+                element.onclick = window.handleStartCollecting;
             }
         });
         
         this.logger.info('Web registration interface configured', {
-            elementsFound: webRegistrationElements.length
+            elementsFound: webRegistrationElements.length,
+            handlerSet: !!window.handleStartCollecting
         });
     }
     
