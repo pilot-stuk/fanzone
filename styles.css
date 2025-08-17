@@ -2360,6 +2360,56 @@ body.theme-dark .telegram-list-item:hover {
     }
 }
 
+/* Registration Prompt Styles */
+.registration-prompt {
+    padding: 40px 20px;
+    text-align: center;
+}
+
+.registration-prompt .empty-state {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.registration-prompt .empty-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.registration-prompt h2 {
+    color: var(--tg-theme-text-color);
+    margin-bottom: 16px;
+}
+
+.registration-prompt p {
+    color: var(--tg-theme-hint-color);
+    margin-bottom: 24px;
+}
+
+.registration-benefits {
+    background: var(--tg-theme-secondary-bg-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 24px 0;
+}
+
+.registration-benefits .benefit {
+    padding: 8px 0;
+    color: var(--tg-theme-text-color);
+    font-size: 16px;
+}
+
+.registration-prompt .hint {
+    font-size: 14px;
+    color: var(--tg-theme-link-color);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* Fix: Enhanced mobile improvements for Telegram */
 @media (max-width: 480px) {
     .gifts-grid {

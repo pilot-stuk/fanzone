@@ -241,8 +241,17 @@ class GiftsController extends ControllerBase {
         const grid = document.getElementById('gifts-grid');
         if (!grid) return;
         
+        // Check if user is registered
+        const isRegistered = this.checkUserRegistration();
+        
         if (this.isLoading) {
             grid.innerHTML = this.renderLoadingState();
+            return;
+        }
+        
+        // Show registration prompt if not registered
+        if (!isRegistered) {
+            grid.innerHTML = this.renderRegistrationPrompt();
             return;
         }
         
@@ -252,6 +261,27 @@ class GiftsController extends ControllerBase {
         }
         
         grid.innerHTML = this.filteredGifts.map(gift => this.renderGiftCard(gift)).join('');
+    }
+    
+    /**
+     * Render registration prompt
+     */
+    renderRegistrationPrompt() {
+        return `
+            <div class="registration-prompt">
+                <div class="empty-state">
+                    <div class="empty-icon">🔒</div>
+                    <h2>Registration Required</h2>
+                    <p>Please click the "Start Collecting" button below to unlock gift collection!</p>
+                    <div class="registration-benefits">
+                        <div class="benefit">✨ Access exclusive gifts</div>
+                        <div class="benefit">🎁 Start your collection</div>
+                        <div class="benefit">🏆 Compete on leaderboard</div>
+                    </div>
+                    <p class="hint">👆 Click the button at the bottom to get started!</p>
+                </div>
+            </div>
+        `;
     }
     
     /**
@@ -320,6 +350,12 @@ class GiftsController extends ControllerBase {
      * Handle gift click
      */
     async handleGiftClick(giftId) {
+        // Check registration state before allowing any gift interaction
+        if (!this.checkUserRegistration()) {
+            this.showRegistrationRequired();
+            return;
+        }
+        
         const gift = this.gifts.find(g => g.id === giftId);
         if (!gift) return;
         
@@ -348,8 +384,47 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
     /**
      * Purchase a gift
      */
+    checkUserRegistration() {
+        // Check if user has completed registration
+        if (window.FanZoneApp && window.FanZoneApp.isUserFullyRegistered) {
+            return window.FanZoneApp.isUserFullyRegistered();
+        }
+        
+        // Fallback to localStorage check
+        try {
+            const saved = localStorage.getItem('fanzone_registration_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                return state.hasClickedStart && state.isFullyRegistered;
+            }
+        } catch (error) {
+            this.logger.warn('Failed to check registration state', error);
+        }
+        
+        return false;
+    }
+    
+    showRegistrationRequired() {
+        this.showToast('⚠️ Please click "Start Collecting" to enable gift features!', 'warning');
+        
+        // Show the main button to guide user
+        const platformAdapter = window.DIContainer.get('platformAdapter');
+        if (platformAdapter && platformAdapter.showMainButton) {
+            platformAdapter.showMainButton('🎁 Start Collecting!', () => {
+                if (window.FanZoneApp && window.FanZoneApp.handleMainButtonClick) {
+                    window.FanZoneApp.handleMainButtonClick();
+                }
+            });
+        }
+    }
+    
     async purchaseGift(giftId) {
         try {
+            // Check registration first
+            if (!this.checkUserRegistration()) {
+                this.showRegistrationRequired();
+                return;
+            }
             // Validate services are still available before critical operation
             if (window.ServiceValidator) {
                 window.ServiceValidator.validateService(this.giftService, 'GiftService');

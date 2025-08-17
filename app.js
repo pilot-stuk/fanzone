@@ -427,16 +427,25 @@ class FanZoneApplication {
             const user = this.authService.getCurrentUser();
             
             if (this.platformAdapter.isAvailable() && user) {
-                // Setup main button for new users
-                if (!user.total_gifts || user.total_gifts === 0) {
+                // Check registration state, not total_gifts
+                const isRegistered = this.isUserFullyRegistered();
+                
+                // Only show main button if user hasn't completed registration
+                if (!isRegistered) {
                     await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
                         await this.handleMainButtonClick();
                     });
+                    this.logger.info('Showing Start Collecting button - user not registered');
+                } else {
+                    // Hide button for registered users
+                    await this.platformAdapter.hideMainButton();
+                    this.logger.info('User already registered, hiding main button');
                 }
                 
                 // Log Telegram UI setup
                 this.logger.debug('Telegram UI setup completed', {
-                    mainButtonShown: !user.total_gifts || user.total_gifts === 0,
+                    isRegistered,
+                    mainButtonShown: !isRegistered,
                     userId: user.id
                 });
             } else {
@@ -545,13 +554,7 @@ class FanZoneApplication {
                 // Test database connection and user permissions
                 await this.testUserDatabaseAccess(user);
                 
-                // Success - navigate to gifts
-                this.navigateToPage('gifts');
-                
-                // Show success message
-                this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
-                
-                // Mark user as fully registered
+                // Mark user as fully registered FIRST
                 this.userRegistrationState = {
                     hasClickedStart: true,
                     isFullyRegistered: true,
@@ -560,6 +563,17 @@ class FanZoneApplication {
                 
                 // Persist registration state
                 localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
+                
+                // Success - navigate to gifts (this will refresh the controller)
+                this.navigateToPage('gifts');
+                
+                // Force refresh of gifts controller to recognize new registration state
+                if (this.giftsController && this.giftsController.renderGifts) {
+                    this.giftsController.renderGifts();
+                }
+                
+                // Show success message
+                this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
                 
                 // Hide loading and main button after successful navigation
                 await this.platformAdapter.setMainButtonLoading(false);
