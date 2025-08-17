@@ -133,10 +133,19 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
             
             // Validate user data if available
             const userData = webApp.initDataUnsafe?.user;
+            if (!userData || !userData.id) {
+                console.warn('⚠️ No Telegram user data available - will use fallback mode');
+                return {
+                    isAvailable: false,
+                    forceFallback: true,
+                    reason: 'no_user_data_available'
+                };
+            }
+            
             if (userData && (!userData.id || typeof userData.id !== 'number')) {
                 return {
                     isAvailable: false,
-                    forceFallback: false,
+                    forceFallback: true,
                     reason: 'invalid_user_data'
                 };
             }
@@ -176,7 +185,8 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
             this.userData = this.webApp.initDataUnsafe?.user;
             
             if (!this.userData || !this.userData.id) {
-                throw new Error('Invalid or missing Telegram user data');
+                console.warn('⚠️ Telegram user data not available, falling back to development mode');
+                throw new Error('Invalid or missing Telegram user data - will use fallback mode');
             }
             
             // Setup event handlers with error handling

@@ -169,15 +169,16 @@ class AuthService extends window.Interfaces.IAuthProvider {
                     
                     this.logger.info('User created successfully via RPC function', { 
                         userId: createdUser.telegram_id,
-                        created: result.created,
-                        message: result.message 
+                        isNew: result.is_new,
+                        created: result.is_new || result.created  // Support both formats
                     });
                     
                     // Track user registration
                     window.EventBus?.emit('user:registered', { 
                         user: createdUser,
                         method: 'rpc',
-                        created: result.created 
+                        created: result.is_new || result.created,
+                        isNew: result.is_new
                     });
                     
                     return createdUser;
