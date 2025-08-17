@@ -9,6 +9,59 @@ class EventBus extends window.Interfaces.IEventBus {
         this.eventHistory = [];
         this.maxHistorySize = 100;
         this.debug = false;
+        
+        // Initialization state
+        this._initializing = false;
+        this._initialized = false;
+        this._readyPromise = null;
+        
+        // Start initialization
+        this.initialize();
+    }
+    
+    /**
+     * Initialize EventBus
+     */
+    async initialize() {
+        if (this._initialized || this._initializing) return this._readyPromise;
+        
+        this._initializing = true;
+        
+        this._readyPromise = new Promise((resolve) => {
+            // Minimal initialization - EventBus is ready immediately
+            setTimeout(() => {
+                this._initialized = true;
+                this._initializing = false;
+                
+                if (this.debug) {
+                    console.log('📢 EventBus initialized and ready');
+                }
+                
+                resolve(this);
+            }, 0);
+        });
+        
+        return this._readyPromise;
+    }
+    
+    /**
+     * Wait for EventBus to be ready
+     */
+    async waitForReady(timeout = 5000) {
+        if (this._initialized) return this;
+        
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('EventBus initialization timeout')), timeout);
+        });
+        
+        return Promise.race([this._readyPromise, timeoutPromise]);
+    }
+    
+    /**
+     * Check if EventBus is ready
+     */
+    isReady() {
+        return this._initialized && !this._initializing;
     }
     
     /**

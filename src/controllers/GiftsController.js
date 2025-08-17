@@ -1,12 +1,16 @@
 // Gifts Controller - UI logic for gifts page
 // Follows Single Responsibility Principle - only handles gift UI
 
-class GiftsController {
+class GiftsController extends ControllerBase {
     constructor(giftService, userService, logger, eventBus) {
+        // Initialize base controller with event system
+        super(eventBus, logger);
+        
+        // Validate services before assigning
+        this.validateDependencies(giftService, userService, logger, eventBus);
+        
         this.giftService = giftService;
         this.userService = userService;
-        this.logger = logger;
-        this.eventBus = eventBus;
         
         this.gifts = [];
         this.filteredGifts = [];
@@ -15,6 +19,24 @@ class GiftsController {
         this.searchQuery = '';
         this.isInitialized = false;
         this.isLoading = false;
+    }
+    
+    /**
+     * Validate controller dependencies
+     */
+    validateDependencies(giftService, userService, logger, eventBus) {
+        if (window.ServiceValidator) {
+            window.ServiceValidator.validateService(giftService, 'GiftService');
+            window.ServiceValidator.validateService(userService, 'UserService');
+            window.ServiceValidator.validateService(logger, 'Logger');
+            window.ServiceValidator.validateService(eventBus, 'EventBus');
+        } else {
+            // Fallback validation if ServiceValidator not available
+            if (!giftService) throw new Error('GiftService is required');
+            if (!userService) throw new Error('UserService is required');
+            if (!logger) throw new Error('Logger is required');
+            if (!eventBus) throw new Error('EventBus is required');
+        }
     }
     
     /**
@@ -27,6 +49,10 @@ class GiftsController {
             this.logger.debug('Initializing gifts controller');
             
             this.showLoadingState();
+            
+            // Initialize event system first
+            await this.initializeEventSystem();
+            
             await this.loadData();
             this.setupUI();
             this.setupEventListeners();
@@ -138,10 +164,15 @@ class GiftsController {
             });
         }
         
-        // Event bus subscriptions
-        this.eventBus.subscribe('gift:purchased', (data) => {
+        // Event bus subscriptions with proper validation and replay
+        this.subscribe('gift:purchased', (data) => {
             this.handleGiftPurchased(data);
-        });
+        }, { replayMissed: true });
+        
+        // Subscribe to user data updates
+        this.subscribe('user:points:updated', () => {
+            this.renderGifts(); // Re-render to update affordability
+        }, { replayMissed: false });
     }
     
     /**
@@ -319,7 +350,20 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
      */
     async purchaseGift(giftId) {
         try {
+            // Validate services are still available before critical operation
+            if (window.ServiceValidator) {
+                window.ServiceValidator.validateService(this.giftService, 'GiftService');
+                window.ServiceValidator.validateMethod(this.giftService, 'purchaseGift', 'GiftService');
+            }
+            
             const authService = window.DIContainer.get('authService');
+            
+            // Validate auth service before use
+            if (window.ServiceValidator) {
+                window.ServiceValidator.validateService(authService, 'AuthService');
+                window.ServiceValidator.validateMethod(authService, 'getCurrentUser', 'AuthService');
+            }
+            
             const user = authService.getCurrentUser();
             
             if (!user) {
@@ -382,12 +426,19 @@ ${isOwned ? '✅ You already own this gift!' : '🎁 Tap "Collect Gift" to add t
                 // Update user points locally
                 user.points = (user.points || 0) - gift.price_points;
                 
-                // Emit event for other components
-                this.eventBus.emit('gift:purchased', {
+                // Emit event for other components using base class method
+                this.emit('gift:purchased', {
                     giftId: giftId,
                     giftName: result.gift_name || gift.name,
                     pointsSpent: result.price_paid || gift.price_points,
                     userId: user.id
+                });
+                
+                // Also emit user points update
+                this.emit('user:points:updated', {
+                    userId: user.id,
+                    newPoints: user.points,
+                    pointsSpent: result.price_paid || gift.price_points
                 });
                 
                 // Success feedback

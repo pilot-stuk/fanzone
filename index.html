@@ -25,8 +25,10 @@
     <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <!-- Local stylesheets -->
-    <link rel="stylesheet" href="styles.css">
+    <!-- Local stylesheets with cache busting -->
+    <script>
+        document.write('<link rel="stylesheet" href="styles.css?v=' + Date.now() + '">');
+    </script>
     
     <style>
         /* Toast notifications */
@@ -92,6 +94,38 @@
             border-top: 4px solid var(--tg-theme-button-color, #3390ec);
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        .loading-progress {
+            width: 200px;
+            height: 6px;
+            background: var(--tg-theme-hint-color, #e0e0e0);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .loading-progress-bar {
+            height: 100%;
+            background: var(--tg-theme-button-color, #3390ec);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .loading-text {
+            color: var(--tg-theme-text-color, #333);
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .cache-info {
+            color: var(--tg-theme-hint-color, #999);
+            font-size: 12px;
+            text-align: center;
+            margin-top: 15px;
         }
         
         @keyframes spin {
@@ -238,7 +272,11 @@
         <!-- Loading Screen -->
         <div id="loading" class="loading-screen">
             <div class="loading-spinner"></div>
-            <p>Initializing FanZone...</p>
+            <div class="loading-progress">
+                <div id="loading-progress-bar" class="loading-progress-bar"></div>
+            </div>
+            <div id="loading-text" class="loading-text">Initializing FanZone...</div>
+            <div id="cache-info" class="cache-info">Loading fresh content...</div>
         </div>
 
         <!-- Main App Container -->
@@ -315,55 +353,210 @@
         </div>
     </div>
 
-    <!-- Load configuration first -->
-    <script src="config.js"></script>
-    <script src="utils.js"></script>
-    
-    <!-- Load core modules -->
-    <script src="src/core/interfaces.js"></script>
-    <script src="src/core/EventBus.js"></script>
-    <script src="src/core/Logger.js"></script>
-    <script src="src/core/DIContainer.js"></script>
-    
-    <!-- Load adapters -->
-    <script src="src/adapters/TelegramAdapter.js"></script>
-    
-    <!-- Load repositories -->
-    <script src="src/repositories/SupabaseRepository.js"></script>
-    
-    <!-- Load services -->
-    <script src="src/services/AuthService.js"></script>
-    <script src="src/services/UserService.js"></script>
-    <script src="src/services/GiftService.js"></script>
-    
-    <!-- Load controllers -->
-    <script src="src/controllers/GiftsController.js"></script>
-    <script src="src/controllers/LeaderboardController.js"></script>
-    <script src="src/controllers/ProfileController.js"></script>
-    
-    <!-- Load main application -->
-    <script src="app.js"></script>
-    
-    <!-- Initialize application -->
+    <!-- Cache busting for JavaScript files -->
     <script>
-        // Wait for DOM to be ready
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                // Initialize the application
-                await window.FanZoneApp.initialize();
-            } catch (error) {
-                console.error('Failed to initialize application:', error);
+        // Generate cache-busting version parameter
+        const CACHE_VERSION = Date.now();
+        
+        // Function to load script with cache busting
+        function loadScript(src, id = null) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = `${src}?v=${CACHE_VERSION}`;
+                if (id) script.id = id;
+                script.onload = () => resolve(script);
+                script.onerror = () => reject(new Error(`Failed to load ${src}`));
+                document.head.appendChild(script);
+            });
+        }
+        
+        // Function to show loading progress
+        function updateLoadingStatus(message, progress = null) {
+            const loadingText = document.getElementById('loading-text');
+            const progressBar = document.getElementById('loading-progress-bar');
+            const cacheInfo = document.getElementById('cache-info');
+            
+            if (loadingText) {
+                loadingText.textContent = message;
+            }
+            
+            if (progress !== null && progressBar) {
+                progressBar.style.width = `${progress}%`;
+            }
+            
+            if (cacheInfo && progress === 0) {
+                cacheInfo.textContent = `Cache version: ${CACHE_VERSION.toString().slice(-6)}`;
+            }
+            
+            console.log(`📋 ${message}${progress ? ` (${progress}%)` : ''}`);
+        }
+        
+        // Enhanced file verification with detailed checking
+        function verifyFilesLoaded() {
+            updateLoadingStatus('Verifying loaded modules...', 90);
+            
+            const criticalModules = [
+                { name: 'CONFIG', description: 'Configuration' },
+                { name: 'Utils', description: 'Utilities' },
+                { name: 'DIContainer', description: 'Dependency Container' },
+                { name: 'EventBus', description: 'Event System' },
+                { name: 'Logger', description: 'Logging System' },
+                { name: 'ErrorHandler', description: 'Error Handler' },
+                { name: 'ServiceValidator', description: 'Service Validator' },
+                { name: 'ControllerBase', description: 'Controller Base Class' },
+                { name: 'TelegramAdapter', description: 'Telegram Integration' }
+            ];
+            
+            const missing = [];
+            const loaded = [];
+            
+            criticalModules.forEach(module => {
+                if (window[module.name]) {
+                    loaded.push(module.description);
+                } else {
+                    missing.push(module.description);
+                }
+            });
+            
+            if (missing.length > 0) {
+                throw new Error(`Critical modules failed to load: ${missing.join(', ')}`);
+            }
+            
+            console.log('✅ All critical modules verified:', loaded.join(', '));
+            updateLoadingStatus('All modules loaded successfully!', 95);
+            return true;
+        }
+        
+        // Load all scripts sequentially with progress updates
+        async function loadAllScripts() {
+            const scripts = [
+                { src: 'config.js', name: 'Configuration' },
+                { src: 'utils.js', name: 'Utilities' },
+                { src: 'src/core/interfaces.js', name: 'Interfaces' },
+                { src: 'src/core/EventBus.js', name: 'Event Bus' },
+                { src: 'src/core/Logger.js', name: 'Logger' },
+                { src: 'src/core/ErrorHandler.js', name: 'Error Handler' },
+                { src: 'src/core/ServiceValidator.js', name: 'Service Validator' },
+                { src: 'src/core/ControllerBase.js', name: 'Controller Base' },
+                { src: 'src/core/DIContainer.js', name: 'DI Container' },
+                { src: 'src/adapters/TelegramAdapter.js', name: 'Telegram Adapter' },
+                { src: 'src/repositories/SupabaseRepository.js', name: 'Repository' },
+                { src: 'src/services/AuthService.js', name: 'Auth Service' },
+                { src: 'src/services/UserService.js', name: 'User Service' },
+                { src: 'src/services/GiftService.js', name: 'Gift Service' },
+                { src: 'src/controllers/GiftsController.js', name: 'Gifts Controller' },
+                { src: 'src/controllers/LeaderboardController.js', name: 'Leaderboard Controller' },
+                { src: 'src/controllers/ProfileController.js', name: 'Profile Controller' },
+                { src: 'app.js', name: 'Main Application' }
+            ];
+            
+            const totalScripts = scripts.length;
+            
+            for (let i = 0; i < totalScripts; i++) {
+                const script = scripts[i];
+                const progress = Math.round(((i + 1) / totalScripts) * 80); // 80% for script loading
                 
-                // Show error to user
-                const errorElement = document.getElementById('error-message');
-                if (errorElement) {
-                    errorElement.style.display = 'flex';
-                    const errorText = document.getElementById('error-text');
-                    if (errorText) {
-                        errorText.textContent = 'Failed to initialize. Please refresh and try again.';
-                    }
+                try {
+                    updateLoadingStatus(`Loading ${script.name}...`, progress);
+                    await loadScript(script.src);
+                    console.log(`✅ Loaded: ${script.name}`);
+                } catch (error) {
+                    console.error(`❌ Failed to load ${script.name}:`, error);
+                    throw new Error(`Failed to load ${script.name}: ${error.message}`);
                 }
             }
+            
+            // Verify all files loaded correctly
+            verifyFilesLoaded();
+        }
+    </script>
+    
+    <!-- Initialize application with cache busting -->
+    <script>
+        // Enhanced error display function
+        function showError(message, details = null) {
+            console.error('App Error:', message, details);
+            
+            const errorElement = document.getElementById('error-message');
+            if (errorElement) {
+                errorElement.style.display = 'flex';
+                const errorText = document.getElementById('error-text');
+                if (errorText) {
+                    errorText.textContent = message;
+                }
+            }
+        }
+        
+        // Wait for DOM to be ready and load all scripts
+        document.addEventListener('DOMContentLoaded', async () => {
+            let initStage = 'startup';
+            
+            try {
+                console.log('🚀 Starting FanZone initialization with cache busting...');
+                updateLoadingStatus('Starting initialization...', 0);
+                
+                // Step 1: Load all scripts with cache busting
+                initStage = 'script_loading';
+                console.log('📋 Loading scripts with cache busting...');
+                await loadAllScripts();
+                
+                // Step 2: Initialize DIContainer and services
+                initStage = 'service_initialization';
+                console.log('📦 Initializing services...');
+                updateLoadingStatus('Initializing services...', 96);
+                await window.DIContainer.initializeApp();
+                
+                // Step 3: Create FanZoneApp AFTER services are ready
+                initStage = 'app_creation';
+                console.log('🏗️ Creating application instance...');
+                updateLoadingStatus('Creating application...', 98);
+                window.FanZoneApp = new FanZoneApplication(window.DIContainer);
+                
+                // Step 4: Initialize the application
+                initStage = 'app_initialization';
+                console.log('⚡ Initializing application...');
+                updateLoadingStatus('Finalizing...', 99);
+                await window.FanZoneApp.initialize();
+                
+                updateLoadingStatus('Ready!', 100);
+                console.log('✅ FanZone initialization complete with cache version:', CACHE_VERSION);
+                
+                // Log success to ErrorHandler for monitoring
+                if (window.ErrorHandler) {
+                    window.ErrorHandler.logError(
+                        { message: 'Initialization successful with cache busting', type: 'success' },
+                        'initialization_complete',
+                        { category: 'success', userMessage: 'App ready', cacheVersion: CACHE_VERSION }
+                    );
+                }
+                
+            } catch (error) {
+                // Use ErrorHandler for comprehensive error handling
+                if (window.ErrorHandler) {
+                    const errorInfo = window.ErrorHandler.handleInitError(error, initStage);
+                    
+                    // Add initialization-specific context
+                    console.error(`Initialization failed at stage: ${initStage}`);
+                    console.error('Error details:', errorInfo);
+                    console.error('Cache version:', CACHE_VERSION);
+                    
+                    // Show recovery options if available
+                    if (errorInfo.recoveryPossible) {
+                        console.log(`💡 Recovery option available: ${errorInfo.recoveryAction}`);
+                    }
+                } else {
+                    // Fallback if ErrorHandler is not available
+                    console.error('❌ Failed to initialize FanZone:', error);
+                    console.error('Failed at stage:', initStage);
+                    console.error('Cache version:', CACHE_VERSION);
+                    showError('Initialization failed. Please refresh and try again.');
+                }
+            }
+        });
+        
+        // Add retry functionality
+        document.getElementById('retry-btn')?.addEventListener('click', () => {
+            location.reload();
         });
     </script>
 </body>

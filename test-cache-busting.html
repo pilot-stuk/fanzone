@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Busting Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #ccc;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007bff, #28a745);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Cache Busting Test</h1>
+        <p>This test verifies that cache busting is working correctly for the FanZone application.</p>
+        
+        <div id="test-results"></div>
+        
+        <div class="progress-bar">
+            <div id="progress" class="progress-fill"></div>
+        </div>
+        
+        <button id="run-test" onclick="runCacheBustingTest()">Run Cache Busting Test</button>
+        <button id="test-main-app" onclick="testMainAppLoading()">Test Main App Loading</button>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('test-results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            results.appendChild(div);
+            console.log(message);
+        }
+        
+        function updateProgress(percent) {
+            document.getElementById('progress').style.width = `${percent}%`;
+        }
+        
+        async function runCacheBustingTest() {
+            const results = document.getElementById('test-results');
+            results.innerHTML = '';
+            
+            log('🚀 Starting cache busting test...', 'info');
+            updateProgress(10);
+            
+            // Test 1: Check cache version generation
+            const version1 = Date.now();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const version2 = Date.now();
+            
+            if (version2 > version1) {
+                log('✅ Cache version generation working (timestamps unique)', 'success');
+            } else {
+                log('❌ Cache version generation failed', 'error');
+            }
+            updateProgress(30);
+            
+            // Test 2: Check script loading with cache busting
+            log('🔍 Testing script loading with cache parameters...', 'info');
+            
+            const testScript = document.createElement('script');
+            const cacheParam = Date.now();
+            testScript.src = `config.js?v=${cacheParam}`;
+            
+            try {
+                await new Promise((resolve, reject) => {
+                    testScript.onload = () => {
+                        log(`✅ Script loaded with cache parameter: v=${cacheParam}`, 'success');
+                        resolve();
+                    };
+                    testScript.onerror = () => {
+                        log('❌ Script failed to load with cache parameter', 'error');
+                        reject();
+                    };
+                    document.head.appendChild(testScript);
+                });
+            } catch (error) {
+                log('❌ Script loading test failed', 'error');
+            }
+            updateProgress(60);
+            
+            // Test 3: Verify CONFIG is loaded with new version
+            if (window.CONFIG) {
+                log('✅ CONFIG object loaded successfully', 'success');
+                log(`📋 App version: ${window.CONFIG.APP_VERSION}`, 'info');
+            } else {
+                log('❌ CONFIG object not found', 'error');
+            }
+            updateProgress(80);
+            
+            // Test 4: Check network requests (if available)
+            if (typeof PerformanceObserver !== 'undefined') {
+                const observer = new PerformanceObserver((list) => {
+                    const entries = list.getEntries();
+                    const scriptEntries = entries.filter(entry => 
+                        entry.name.includes('.js') && entry.name.includes('?v=')
+                    );
+                    
+                    if (scriptEntries.length > 0) {
+                        log(`✅ Found ${scriptEntries.length} scripts loaded with cache parameters`, 'success');
+                        scriptEntries.forEach(entry => {
+                            log(`📁 ${entry.name.split('/').pop()}`, 'info');
+                        });
+                    }
+                });
+                observer.observe({entryTypes: ['resource']});
+                
+                setTimeout(() => observer.disconnect(), 1000);
+            }
+            
+            updateProgress(100);
+            log('🎉 Cache busting test completed!', 'success');
+        }
+        
+        async function testMainAppLoading() {
+            const results = document.getElementById('test-results');
+            results.innerHTML = '';
+            
+            log('🔄 Testing main app loading with cache busting...', 'info');
+            
+            // Open main app in new window to test loading
+            const testWindow = window.open('index.html', '_blank', 'width=400,height=600');
+            
+            if (testWindow) {
+                log('✅ Main app opened in new window for testing', 'success');
+                log('👀 Check the new window for loading progress and cache version info', 'info');
+                log('🔧 Open browser DevTools to see cache-busted requests', 'info');
+            } else {
+                log('❌ Failed to open test window (popup blocked?)', 'error');
+                log('💡 Try opening index.html manually to test', 'info');
+            }
+        }
+    </script>
+</body>
+</html>

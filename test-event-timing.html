@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Bus Timing Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #ccc;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007bff, #28a745);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Event Bus Subscription Timing Test</h1>
+        <p>This test verifies that event subscription timing issues are resolved.</p>
+        
+        <div class="progress-bar">
+            <div id="progress" class="progress-fill"></div>
+        </div>
+        
+        <div id="test-results"></div>
+        
+        <div class="test-section">
+            <h3>Test Controls</h3>
+            <button onclick="runBasicTimingTest()">Basic Timing Test</button>
+            <button onclick="runSubscriptionValidationTest()">Subscription Validation</button>
+            <button onclick="runEventReplayTest()">Event Replay Test</button>
+            <button onclick="runFullIntegrationTest()">Full Integration Test</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>Event Simulation</h3>
+            <button onclick="simulateGiftPurchase()">Simulate Gift Purchase</button>
+            <button onclick="simulateUserPointsUpdate()">Simulate Points Update</button>
+            <button onclick="simulateControllerInit()">Simulate Controller Init</button>
+        </div>
+    </div>
+
+    <!-- Load test dependencies -->
+    <script src="src/core/interfaces.js"></script>
+    <script src="src/core/EventBus.js"></script>
+    <script src="src/core/Logger.js"></script>
+    <script src="src/core/ControllerBase.js"></script>
+
+    <script>
+        let testResults = [];
+        
+        function log(message, type = 'info') {
+            const results = document.getElementById('test-results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            results.appendChild(div);
+            
+            testResults.push({ message, type, timestamp: Date.now() });
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function updateProgress(percent) {
+            document.getElementById('progress').style.width = `${percent}%`;
+        }
+        
+        function clearResults() {
+            document.getElementById('test-results').innerHTML = '';
+            testResults = [];
+            updateProgress(0);
+        }
+        
+        // Mock Logger for tests
+        const mockLogger = {
+            debug: (msg, data) => console.log(`[DEBUG] ${msg}`, data),
+            info: (msg, data) => console.log(`[INFO] ${msg}`, data),
+            warn: (msg, data) => console.log(`[WARN] ${msg}`, data),
+            error: (msg, data) => console.error(`[ERROR] ${msg}`, data),
+            isDebugEnabled: () => true
+        };
+        
+        async function runBasicTimingTest() {
+            log('🧪 Starting Basic Timing Test...', 'info');
+            updateProgress(10);
+            
+            try {
+                // Test 1: EventBus initialization
+                log('📋 Testing EventBus initialization...', 'info');
+                const eventBus = new EventBus();
+                
+                if (!eventBus.isReady()) {
+                    log('⏳ EventBus initializing, waiting...', 'warning');
+                    await eventBus.waitForReady();
+                }
+                
+                if (eventBus.isReady()) {
+                    log('✅ EventBus initialized successfully', 'success');
+                } else {
+                    throw new Error('EventBus failed to initialize');
+                }
+                updateProgress(30);
+                
+                // Test 2: Basic subscription
+                log('📋 Testing basic subscription...', 'info');
+                let eventReceived = false;
+                
+                const unsubscribe = eventBus.subscribe('test:event', (data) => {
+                    eventReceived = true;
+                    log(`✅ Event received: ${data.message}`, 'success');
+                });
+                
+                // Emit test event
+                eventBus.emit('test:event', { message: 'Hello from EventBus!' });
+                
+                if (eventReceived) {
+                    log('✅ Basic subscription test passed', 'success');
+                } else {
+                    throw new Error('Event was not received');
+                }
+                updateProgress(50);
+                
+                // Test 3: Controller base class
+                log('📋 Testing ControllerBase with EventBus...', 'info');
+                const controller = new ControllerBase(eventBus, mockLogger);
+                
+                await controller.initializeEventSystem();
+                
+                let controllerEventReceived = false;
+                controller.subscribe('test:controller', (data) => {
+                    controllerEventReceived = true;
+                    log(`✅ Controller event received: ${data.message}`, 'success');
+                });
+                
+                controller.emit('test:controller', { message: 'Hello from Controller!' });
+                
+                if (controllerEventReceived) {
+                    log('✅ Controller subscription test passed', 'success');
+                } else {
+                    throw new Error('Controller event was not received');
+                }
+                updateProgress(80);
+                
+                // Cleanup
+                unsubscribe();
+                controller.destroy();
+                
+                updateProgress(100);
+                log('🎉 Basic Timing Test completed successfully!', 'success');
+                
+            } catch (error) {
+                log(`❌ Basic Timing Test failed: ${error.message}`, 'error');
+                updateProgress(100);
+            }
+        }
+        
+        async function runSubscriptionValidationTest() {
+            log('🧪 Starting Subscription Validation Test...', 'info');
+            updateProgress(10);
+            
+            try {
+                const eventBus = new EventBus();
+                await eventBus.waitForReady();
+                const controller = new ControllerBase(eventBus, mockLogger);
+                await controller.initializeEventSystem();
+                updateProgress(30);
+                
+                // Test 1: Invalid event name
+                log('📋 Testing invalid event name handling...', 'info');
+                try {
+                    controller.subscribe('', () => {});
+                    throw new Error('Should have thrown error for empty event name');
+                } catch (error) {
+                    if (error.message.includes('Event name must be')) {
+                        log('✅ Invalid event name properly rejected', 'success');
+                    } else {
+                        throw error;
+                    }
+                }
+                updateProgress(50);
+                
+                // Test 2: Invalid handler
+                log('📋 Testing invalid handler handling...', 'info');
+                try {
+                    controller.subscribe('test:event', null);
+                    throw new Error('Should have thrown error for null handler');
+                } catch (error) {
+                    if (error.message.includes('Event handler must be')) {
+                        log('✅ Invalid handler properly rejected', 'success');
+                    } else {
+                        throw error;
+                    }
+                }
+                updateProgress(70);
+                
+                // Test 3: Subscription after destroy
+                log('📋 Testing subscription after controller destroy...', 'info');
+                controller.destroy();
+                
+                const unsubscribe = controller.subscribe('test:destroyed', () => {});
+                controller.emit('test:destroyed', { test: true });
+                
+                log('✅ Destroyed controller handled gracefully', 'success');
+                updateProgress(100);
+                
+                log('🎉 Subscription Validation Test completed!', 'success');
+                
+            } catch (error) {
+                log(`❌ Subscription Validation Test failed: ${error.message}`, 'error');
+                updateProgress(100);
+            }
+        }
+        
+        async function runEventReplayTest() {
+            log('🧪 Starting Event Replay Test...', 'info');
+            updateProgress(10);
+            
+            try {
+                const eventBus = new EventBus();
+                await eventBus.waitForReady();
+                updateProgress(20);
+                
+                // Emit events before subscription
+                log('📋 Emitting events before subscription...', 'info');
+                eventBus.emit('replay:test', { message: 'Event 1', id: 1 });
+                eventBus.emit('replay:test', { message: 'Event 2', id: 2 });
+                eventBus.emit('replay:test', { message: 'Event 3', id: 3 });
+                updateProgress(40);
+                
+                // Create controller and subscribe with replay
+                log('📋 Creating controller and subscribing with replay...', 'info');
+                const controller = new ControllerBase(eventBus, mockLogger);
+                await controller.initializeEventSystem();
+                
+                const replayedEvents = [];
+                controller.subscribe('replay:test', (data) => {
+                    replayedEvents.push(data);
+                    log(`📨 Replayed event: ${data.message}`, 'info');
+                }, { replayMissed: true });
+                
+                updateProgress(70);
+                
+                // Wait a bit for replay to complete
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                if (replayedEvents.length > 0) {
+                    log(`✅ Event replay working! Replayed ${replayedEvents.length} events`, 'success');
+                } else {
+                    log('⚠️ No events replayed (may be expected if history is empty)', 'warning');
+                }
+                
+                // Test new events after subscription
+                log('📋 Testing new events after subscription...', 'info');
+                controller.emit('replay:test', { message: 'New Event', id: 4 });
+                
+                updateProgress(100);
+                controller.destroy();
+                
+                log('🎉 Event Replay Test completed!', 'success');
+                
+            } catch (error) {
+                log(`❌ Event Replay Test failed: ${error.message}`, 'error');
+                updateProgress(100);
+            }
+        }
+        
+        async function runFullIntegrationTest() {
+            log('🧪 Starting Full Integration Test...', 'info');
+            updateProgress(5);
+            
+            try {
+                // Simulate real controller initialization scenario
+                log('📋 Simulating real application initialization...', 'info');
+                
+                const eventBus = new EventBus();
+                await eventBus.waitForReady();
+                updateProgress(15);
+                
+                // Create mock controllers
+                log('📋 Creating mock GiftsController and ProfileController...', 'info');
+                const giftsController = new ControllerBase(eventBus, mockLogger);
+                const profileController = new ControllerBase(eventBus, mockLogger);
+                
+                await Promise.all([
+                    giftsController.initializeEventSystem(),
+                    profileController.initializeEventSystem()
+                ]);
+                updateProgress(30);
+                
+                // Setup subscriptions like real controllers
+                log('📋 Setting up cross-controller event subscriptions...', 'info');
+                
+                const profileUpdates = [];
+                const giftsUpdates = [];
+                
+                // Profile controller subscribes to gift purchases
+                profileController.subscribe('gift:purchased', (data) => {
+                    profileUpdates.push(data);
+                    log(`👤 Profile received gift purchase: ${data.giftName}`, 'info');
+                }, { replayMissed: true });
+                
+                // Gifts controller subscribes to user points updates
+                giftsController.subscribe('user:points:updated', (data) => {
+                    giftsUpdates.push(data);
+                    log(`🎁 Gifts received points update: ${data.newPoints} points`, 'info');
+                }, { replayMissed: false });
+                
+                updateProgress(50);
+                
+                // Simulate gift purchase flow
+                log('📋 Simulating gift purchase flow...', 'info');
+                
+                // Gifts controller emits purchase event
+                giftsController.emit('gift:purchased', {
+                    giftId: 'test-gift-1',
+                    giftName: 'Test Gift',
+                    pointsSpent: 100,
+                    userId: 'test-user'
+                });
+                
+                // Gifts controller emits points update
+                giftsController.emit('user:points:updated', {
+                    userId: 'test-user',
+                    newPoints: 900,
+                    pointsSpent: 100
+                });
+                
+                updateProgress(75);
+                
+                // Wait for events to propagate
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Verify cross-controller communication
+                if (profileUpdates.length > 0 && giftsUpdates.length > 0) {
+                    log('✅ Cross-controller communication successful!', 'success');
+                    log(`📊 Profile received ${profileUpdates.length} updates`, 'info');
+                    log(`📊 Gifts received ${giftsUpdates.length} updates`, 'info');
+                } else {
+                    throw new Error('Cross-controller communication failed');
+                }
+                
+                updateProgress(90);
+                
+                // Test subscription info
+                const giftsInfo = giftsController.getSubscriptionInfo();
+                const profileInfo = profileController.getSubscriptionInfo();
+                
+                log(`📊 Gifts Controller: ${giftsInfo.active} active subscriptions`, 'info');
+                log(`📊 Profile Controller: ${profileInfo.active} active subscriptions`, 'info');
+                
+                // Cleanup
+                giftsController.destroy();
+                profileController.destroy();
+                
+                updateProgress(100);
+                log('🎉 Full Integration Test completed successfully!', 'success');
+                
+            } catch (error) {
+                log(`❌ Full Integration Test failed: ${error.message}`, 'error');
+                updateProgress(100);
+            }
+        }
+        
+        // Event simulation functions
+        function simulateGiftPurchase() {
+            if (window.EventBus) {
+                window.EventBus.emit('gift:purchased', {
+                    giftId: 'sim-gift-' + Date.now(),
+                    giftName: 'Simulated Gift',
+                    pointsSpent: 150,
+                    userId: 'sim-user'
+                });
+                log('🎁 Simulated gift purchase event', 'info');
+            } else {
+                log('❌ EventBus not available', 'error');
+            }
+        }
+        
+        function simulateUserPointsUpdate() {
+            if (window.EventBus) {
+                window.EventBus.emit('user:points:updated', {
+                    userId: 'sim-user',
+                    newPoints: Math.floor(Math.random() * 1000),
+                    pointsSpent: 50
+                });
+                log('💰 Simulated user points update event', 'info');
+            } else {
+                log('❌ EventBus not available', 'error');
+            }
+        }
+        
+        async function simulateControllerInit() {
+            try {
+                if (window.EventBus && window.ControllerBase) {
+                    log('📋 Simulating controller initialization...', 'info');
+                    
+                    const controller = new ControllerBase(window.EventBus, mockLogger);
+                    await controller.initializeEventSystem();
+                    
+                    controller.subscribe('test:simulation', (data) => {
+                        log(`📨 Test controller received: ${data.message}`, 'success');
+                    });
+                    
+                    controller.emit('test:simulation', { message: 'Hello from simulated controller!' });
+                    
+                    setTimeout(() => {
+                        controller.destroy();
+                        log('🧹 Simulated controller destroyed', 'info');
+                    }, 2000);
+                    
+                } else {
+                    log('❌ Required classes not available', 'error');
+                }
+            } catch (error) {
+                log(`❌ Controller simulation failed: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

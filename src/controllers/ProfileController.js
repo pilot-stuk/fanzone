@@ -1,12 +1,16 @@
 // Profile Controller - UI logic for profile page
 // Follows Single Responsibility Principle - only handles profile UI
 
-class ProfileController {
+class ProfileController extends ControllerBase {
     constructor(userService, giftService, logger, eventBus) {
+        // Initialize base controller with event system
+        super(eventBus, logger);
+        
+        // Validate services before assigning
+        this.validateDependencies(userService, giftService, logger, eventBus);
+        
         this.userService = userService;
         this.giftService = giftService;
-        this.logger = logger;
-        this.eventBus = eventBus;
         
         this.user = null;
         this.userGifts = [];
@@ -14,6 +18,24 @@ class ProfileController {
         this.currentTab = 'collection';
         this.isInitialized = false;
         this.isLoading = false;
+    }
+    
+    /**
+     * Validate controller dependencies
+     */
+    validateDependencies(userService, giftService, logger, eventBus) {
+        if (window.ServiceValidator) {
+            window.ServiceValidator.validateService(userService, 'UserService');
+            window.ServiceValidator.validateService(giftService, 'GiftService');
+            window.ServiceValidator.validateService(logger, 'Logger');
+            window.ServiceValidator.validateService(eventBus, 'EventBus');
+        } else {
+            // Fallback validation if ServiceValidator not available
+            if (!userService) throw new Error('UserService is required');
+            if (!giftService) throw new Error('GiftService is required');
+            if (!logger) throw new Error('Logger is required');
+            if (!eventBus) throw new Error('EventBus is required');
+        }
     }
     
     /**
@@ -26,6 +48,10 @@ class ProfileController {
             this.logger.debug('Initializing profile controller');
             
             this.showLoadingState();
+            
+            // Initialize event system first
+            await this.initializeEventSystem();
+            
             await this.loadProfileData();
             this.setupEventListeners();
             this.renderProfile();
@@ -105,14 +131,19 @@ class ProfileController {
             }
         });
         
-        // Event bus subscriptions
-        this.eventBus.subscribe('gift:purchased', (data) => {
+        // Event bus subscriptions with proper validation and replay
+        this.subscribe('gift:purchased', (data) => {
             this.handleGiftPurchased(data);
-        });
+        }, { replayMissed: true });
         
-        this.eventBus.subscribe('user:points:updated', () => {
+        this.subscribe('user:points:updated', (data) => {
+            this.handleUserPointsUpdated(data);
+        }, { replayMissed: false });
+        
+        // Subscribe to user profile updates
+        this.subscribe('user:profile:updated', () => {
             this.refreshUserData();
-        });
+        }, { replayMissed: false });
     }
     
     /**
@@ -479,9 +510,38 @@ class ProfileController {
         
         this.userGifts.push(newGift);
         
-        // Re-render if on collection tab
-        if (this.currentTab === 'collection') {
+        // Update user points if available
+        if (data.userId && this.user && this.user.id === data.userId) {
+            this.user.points = (this.user.points || 0) - data.pointsSpent;
+        }
+        
+        // Re-render profile to show new gift and updated points
+        this.renderProfile();
+        
+        this.logger.debug('Gift purchase processed in profile', {
+            giftId: data.giftId,
+            newCollectionSize: this.userGifts.length
+        });
+    }
+    
+    /**
+     * Handle user points updated event
+     */
+    handleUserPointsUpdated(data) {
+        if (!data || !this.user) return;
+        
+        // Update user points if this is for the current user
+        if (data.userId && this.user.id === data.userId) {
+            this.user.points = data.newPoints;
+            
+            // Re-render header to show updated points
             this.renderProfile();
+            
+            this.logger.debug('User points updated in profile', {
+                userId: data.userId,
+                newPoints: data.newPoints,
+                pointsSpent: data.pointsSpent
+            });
         }
     }
     
@@ -525,6 +585,19 @@ class ProfileController {
      */
     async refresh() {
         try {
+            // Validate services are still available before refresh
+            if (window.ServiceValidator) {
+                const validation = window.ServiceValidator.validateServices([
+                    { service: this.userService, name: 'UserService' },
+                    { service: this.giftService, name: 'GiftService' },
+                    { service: this.logger, name: 'Logger' }
+                ]);
+                
+                if (!validation.valid) {
+                    throw new Error('Required services are not available for refresh');
+                }
+            }
+            
             this.logger.debug('Refreshing profile data');
             
             // Show loading state
@@ -542,9 +615,16 @@ class ProfileController {
             // Show success feedback
             this.showToast('Profile refreshed!', 'success');
             
-            // Haptic feedback
-            const platformAdapter = window.DIContainer.get('platformAdapter');
-            platformAdapter.sendHapticFeedback('light');
+            // Haptic feedback - validate platform adapter first
+            try {
+                const platformAdapter = window.DIContainer.get('platformAdapter');
+                if (window.ServiceValidator && window.ServiceValidator.isMethodAvailable(platformAdapter, 'sendHapticFeedback')) {
+                    platformAdapter.sendHapticFeedback('light');
+                }
+            } catch (e) {
+                // Platform adapter not available, skip haptic feedback
+                console.debug('Platform adapter not available for haptic feedback');
+            }
             
             this.logger.debug('Profile refreshed successfully');
             

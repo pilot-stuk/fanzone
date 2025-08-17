@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FanZone Initialization Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .log { margin: 5px 0; padding: 5px; border-radius: 3px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <h1>FanZone Initialization Test</h1>
+    <div id="logs"></div>
+    
+    <!-- Telegram Web App -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Load configuration first -->
+    <script src="config.js"></script>
+    <script src="utils.js"></script>
+    
+    <!-- Load core modules -->
+    <script src="src/core/interfaces.js"></script>
+    <script src="src/core/EventBus.js"></script>
+    <script src="src/core/Logger.js"></script>
+    <script src="src/core/DIContainer.js"></script>
+    
+    <!-- Load adapters -->
+    <script src="src/adapters/TelegramAdapter.js"></script>
+    
+    <!-- Load repositories -->
+    <script src="src/repositories/SupabaseRepository.js"></script>
+    
+    <!-- Load services -->
+    <script src="src/services/AuthService.js"></script>
+    <script src="src/services/UserService.js"></script>
+    <script src="src/services/GiftService.js"></script>
+    
+    <!-- Load controllers -->
+    <script src="src/controllers/GiftsController.js"></script>
+    <script src="src/controllers/LeaderboardController.js"></script>
+    <script src="src/controllers/ProfileController.js"></script>
+    
+    <!-- Load main application -->
+    <script src="app.js"></script>
+    
+    <script>
+        const logContainer = document.getElementById('logs');
+        
+        function addLog(message, type = 'info') {
+            const logElement = document.createElement('div');
+            logElement.className = `log ${type}`;
+            logElement.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            logContainer.appendChild(logElement);
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Override console methods to show in UI
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        console.log = (...args) => {
+            originalLog(...args);
+            if (args[0] && typeof args[0] === 'string') {
+                if (args[0].includes('✅')) addLog(args[0], 'success');
+                else if (args[0].includes('🚀') || args[0].includes('📦') || args[0].includes('🏗️') || args[0].includes('⚡')) addLog(args[0], 'info');
+                else addLog(args.join(' '), 'info');
+            }
+        };
+        
+        console.error = (...args) => {
+            originalError(...args);
+            addLog(args.join(' '), 'error');
+        };
+        
+        console.warn = (...args) => {
+            originalWarn(...args);
+            addLog(args.join(' '), 'warning');
+        };
+        
+        // Test the initialization sequence
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                addLog('Starting initialization test...', 'info');
+                
+                // Test 1: Check if critical objects exist
+                addLog('Test 1: Checking if critical objects are loaded...', 'info');
+                const required = ['DIContainer', 'EventBus', 'Logger', 'TelegramAdapter'];
+                const missing = required.filter(name => !window[name]);
+                if (missing.length > 0) {
+                    throw new Error(`Missing critical objects: ${missing.join(', ')}`);
+                }
+                addLog('✅ All critical objects loaded', 'success');
+                
+                // Test 2: Initialize DIContainer
+                addLog('Test 2: Initializing DIContainer...', 'info');
+                await window.DIContainer.initializeApp();
+                addLog('✅ DIContainer initialized successfully', 'success');
+                
+                // Test 3: Create FanZoneApp
+                addLog('Test 3: Creating FanZone application...', 'info');
+                window.FanZoneApp = new FanZoneApplication(window.DIContainer);
+                addLog('✅ FanZone application created', 'success');
+                
+                // Test 4: Initialize FanZoneApp
+                addLog('Test 4: Initializing FanZone application...', 'info');
+                await window.FanZoneApp.initialize();
+                addLog('✅ FanZone application initialized successfully', 'success');
+                
+                addLog('🎉 ALL TESTS PASSED! Initialization race condition is FIXED!', 'success');
+                
+            } catch (error) {
+                addLog(`❌ TEST FAILED: ${error.message}`, 'error');
+                addLog(`Full error: ${error.stack}`, 'error');
+            }
+        });
+    </script>
+</body>
+</html>

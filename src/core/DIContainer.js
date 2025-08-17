@@ -147,23 +147,40 @@ class DIContainer {
             return;
         }
         
+        let currentStep = 'starting';
+        
         try {
             console.log('🏗️ Initializing Dependency Injection Container...');
             
             // Register core services
+            currentStep = 'core_services';
+            console.log('  📌 Registering core services...');
             this.registerCoreServices();
+            console.log('  ✅ Core services registered');
             
             // Register adapters
+            currentStep = 'adapters';
+            console.log('  📌 Registering adapters...');
             this.registerAdapters();
+            console.log('  ✅ Adapters registered');
             
             // Register repositories
+            currentStep = 'repositories';
+            console.log('  📌 Registering repositories...');
             this.registerRepositories();
+            console.log('  ✅ Repositories registered');
             
             // Register business services
+            currentStep = 'business_services';
+            console.log('  📌 Registering business services...');
             this.registerBusinessServices();
+            console.log('  ✅ Business services registered');
             
             // Initialize critical services
+            currentStep = 'critical_services_init';
+            console.log('  📌 Initializing critical services...');
             await this.initializeCriticalServices();
+            console.log('  ✅ Critical services initialized');
             
             this.initialized = true;
             
@@ -173,8 +190,20 @@ class DIContainer {
             window.EventBus?.emit('app:initialized');
             
         } catch (error) {
-            console.error('❌ Failed to initialize DI Container:', error);
-            throw error;
+            const enhancedError = new Error(`DI Container initialization failed at step: ${currentStep}. ${error.message}`);
+            enhancedError.step = currentStep;
+            enhancedError.originalError = error;
+            
+            console.error('❌ Failed to initialize DI Container:', enhancedError);
+            console.error('  Failed at step:', currentStep);
+            console.error('  Original error:', error);
+            
+            // Use ErrorHandler if available
+            if (window.ErrorHandler) {
+                window.ErrorHandler.handleInitError(enhancedError, `DIContainer.${currentStep}`);
+            }
+            
+            throw enhancedError;
         }
     }
     
@@ -233,27 +262,102 @@ class DIContainer {
      * Register business services
      */
     registerBusinessServices() {
-        // Auth Service
+        // Auth Service with validation and fallback
         this.register('authService', (repository, platformAdapter, logger) => {
-            return new window.AuthService(repository, platformAdapter, logger);
+            // Validate critical dependencies
+            if (window.ServiceValidator) {
+                window.ServiceValidator.validateService(logger, 'Logger');
+                // Repository and platformAdapter can be null in fallback mode
+            }
+            
+            const authService = new window.AuthService(repository, platformAdapter, logger);
+            
+            // Provide fallback wrapper if repository is unavailable
+            if (!repository && window.ServiceValidator) {
+                console.warn('AuthService running with fallback (no repository)');
+                return window.ServiceValidator.createFallbackWrapper(authService, 'AuthService', {
+                    authenticate: async () => ({ 
+                        success: true, 
+                        user: JSON.parse(localStorage.getItem('fanzone_user') || '{}'),
+                        offline: true 
+                    }),
+                    getCurrentUser: () => JSON.parse(localStorage.getItem('fanzone_user') || 'null'),
+                    isAuthenticated: () => !!localStorage.getItem('fanzone_user'),
+                    logout: () => localStorage.removeItem('fanzone_user')
+                });
+            }
+            
+            return authService;
         }, {
             singleton: true,
             dependencies: ['repository', 'platformAdapter', 'logger'],
             aliases: ['auth']
         });
         
-        // User Service
+        // User Service with validation and fallback
         this.register('userService', (repository, logger) => {
-            return new window.UserService(repository, logger);
+            // Validate critical dependencies
+            if (window.ServiceValidator) {
+                window.ServiceValidator.validateService(logger, 'Logger');
+            }
+            
+            const userService = new window.UserService(repository, logger);
+            
+            // Provide fallback wrapper if repository is unavailable
+            if (!repository && window.ServiceValidator) {
+                console.warn('UserService running with fallback (no repository)');
+                return window.ServiceValidator.createFallbackWrapper(userService, 'UserService', {
+                    getUserProfile: async (userId) => JSON.parse(localStorage.getItem('fanzone_user') || 'null'),
+                    getUserStats: async (userId) => ({ rank: null, totalGifts: 0, points: 0 }),
+                    getLeaderboard: async () => [],
+                    updateUserPoints: async (userId, points) => {
+                        const user = JSON.parse(localStorage.getItem('fanzone_user') || '{}');
+                        user.points = points;
+                        localStorage.setItem('fanzone_user', JSON.stringify(user));
+                        return user;
+                    }
+                });
+            }
+            
+            return userService;
         }, {
             singleton: true,
             dependencies: ['repository', 'logger'],
             aliases: ['users']
         });
         
-        // Gift Service
+        // Gift Service with validation and fallback
         this.register('giftService', (repository, userService, logger) => {
-            return new window.GiftService(repository, userService, logger);
+            // Validate critical dependencies
+            if (window.ServiceValidator) {
+                window.ServiceValidator.validateService(logger, 'Logger');
+                window.ServiceValidator.validateService(userService, 'UserService');
+            }
+            
+            const giftService = new window.GiftService(repository, userService, logger);
+            
+            // Provide fallback wrapper if repository is unavailable
+            if (!repository && window.ServiceValidator) {
+                console.warn('GiftService running with fallback (no repository)');
+                const sampleGifts = [
+                    { id: 'gift-1', name: 'Welcome Gift', price_points: 10, current_supply: 0, max_supply: 100, category: 'special', image_url: 'https://via.placeholder.com/150', description: 'A special welcome gift' },
+                    { id: 'gift-2', name: 'Trophy Gift', price_points: 50, current_supply: 0, max_supply: 50, category: 'trophy', image_url: 'https://via.placeholder.com/150', description: 'A trophy for champions' }
+                ];
+                
+                return window.ServiceValidator.createFallbackWrapper(giftService, 'GiftService', {
+                    getAvailableGifts: async () => sampleGifts,
+                    getUserGifts: async (userId) => JSON.parse(localStorage.getItem('fanzone_user_gifts') || '[]'),
+                    purchaseGift: async (userId, giftId) => {
+                        const gifts = JSON.parse(localStorage.getItem('fanzone_user_gifts') || '[]');
+                        gifts.push({ gift_id: giftId, obtained_at: new Date().toISOString() });
+                        localStorage.setItem('fanzone_user_gifts', JSON.stringify(gifts));
+                        return { success: true, message: 'Gift purchased (offline mode)' };
+                    },
+                    getSampleGifts: () => sampleGifts
+                });
+            }
+            
+            return giftService;
         }, {
             singleton: true,
             dependencies: ['repository', 'userService', 'logger'],
@@ -266,22 +370,49 @@ class DIContainer {
      */
     async initializeCriticalServices() {
         const logger = this.get('logger');
+        let criticalErrors = [];
         
-        // Initialize Platform Adapter
-        logger.info('Initializing platform adapter...');
-        const platformAdapter = this.get('platformAdapter');
-        await platformAdapter.initialize();
-        
-        // Initialize Repository
-        logger.info('Initializing data repository...');
-        const repository = this.get('repository');
-        
+        // Initialize Platform Adapter with error handling
         try {
-            await repository.initialize();
+            logger.info('Initializing platform adapter...');
+            const platformAdapter = this.get('platformAdapter');
+            await platformAdapter.initialize();
+            logger.info('✅ Platform adapter initialized');
         } catch (error) {
-            logger.warn('Repository initialization failed, will use fallback mode', {
-                error: error.message
-            });
+            const msg = 'Platform adapter initialization failed';
+            logger.error(msg, error);
+            criticalErrors.push({ service: 'platformAdapter', error, critical: false });
+            
+            // Platform adapter failure is not critical - app can work without Telegram
+            if (window.ErrorHandler) {
+                window.ErrorHandler.handleInitError(error, 'platformAdapter.init');
+            }
+        }
+        
+        // Initialize Repository with error handling
+        try {
+            logger.info('Initializing data repository...');
+            const repository = this.get('repository');
+            await repository.initialize();
+            logger.info('✅ Repository initialized');
+        } catch (error) {
+            const msg = 'Repository initialization failed, using fallback mode';
+            logger.warn(msg, { error: error.message });
+            
+            // Repository failure is not critical - app can work in offline mode
+            if (window.ErrorHandler) {
+                const errorInfo = window.ErrorHandler.handleInitError(error, 'repository.init');
+                if (errorInfo.recoveryAction === 'offline_mode') {
+                    window.ErrorHandler.enableOfflineMode();
+                }
+            }
+        }
+        
+        // Check if any critical errors occurred
+        const criticalFailures = criticalErrors.filter(e => e.critical);
+        if (criticalFailures.length > 0) {
+            const services = criticalFailures.map(e => e.service).join(', ');
+            throw new Error(`Critical services failed to initialize: ${services}`);
         }
         
         // Initialize Auth Service

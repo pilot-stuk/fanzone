@@ -11,74 +11,332 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
     }
     
     /**
-     * Initialize Telegram Web App
+     * Initialize Telegram Web App with enhanced detection and error handling
      */
     async initialize() {
-        return new Promise((resolve, reject) => {
-            try {
-                if (this.isAvailable()) {
-                    this.webApp = window.Telegram.WebApp;
-                    
-                    // Initialize and expand
-                    this.webApp.ready();
-                    this.webApp.expand();
-                    
-                    // Get user data
-                    this.userData = this.webApp.initDataUnsafe?.user;
-                    
-                    // Validate user data
-                    if (!this.userData || !this.userData.id) {
-                        throw new Error('Invalid Telegram user data');
-                    }
-                    
-                    // Setup event handlers
-                    this.setupEventHandlers();
-                    
-                    // Apply theme
-                    this.applyTheme();
-                    
-                    // Enable closing confirmation
-                    this.webApp.enableClosingConfirmation();
-                    
-                    this.isInitialized = true;
-                    
-                    console.log('✅ Telegram Web App initialized:', {
-                        userId: this.userData.id,
-                        username: this.userData.username,
-                        firstName: this.userData.first_name
-                    });
-                    
-                    resolve(true);
-                } else {
-                    // Fallback mode for development
-                    this.userData = {
-                        id: 12345,
-                        first_name: 'Test',
-                        last_name: 'User',
-                        username: 'testuser',
-                        language_code: 'en'
-                    };
-                    
-                    this.isInitialized = true;
-                    console.warn('⚠️ Running in development mode without Telegram');
-                    resolve(true);
+        if (this.isInitialized) {
+            console.log('TelegramAdapter already initialized');
+            return true;
+        }
+        
+        try {
+            console.log('📱 Starting Telegram Web App initialization...');
+            
+            // Enhanced availability detection
+            const availability = await this.detectTelegramAvailability();
+            
+            if (availability.isAvailable && !availability.forceFallback) {
+                await this.initializeTelegramMode(availability);
+            } else {
+                await this.initializeFallbackMode(availability.reason);
+            }
+            
+            this.isInitialized = true;
+            
+            // Log successful initialization
+            console.log('✅ TelegramAdapter initialized successfully', {
+                mode: this.webApp ? 'telegram' : 'fallback',
+                userId: this.userData?.id,
+                username: this.userData?.username
+            });
+            
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Telegram initialization failed:', error);
+            
+            // Use ErrorHandler for comprehensive error handling
+            if (window.ErrorHandler) {
+                const errorInfo = window.ErrorHandler.handleInitError(error, 'TelegramAdapter.initialize');
+                console.log('Error categorized as:', errorInfo.category);
+                
+                // Log error details for debugging
+                if (errorInfo.context) {
+                    console.log('Error context:', errorInfo.context);
                 }
-            } catch (error) {
-                console.error('❌ Telegram initialization error:', error);
-                
-                // Fallback to mock user
-                this.userData = {
-                    id: Date.now(),
-                    first_name: 'Guest',
-                    last_name: 'User',
-                    username: `guest_${Date.now()}`,
-                    language_code: 'en'
-                };
-                
+            }
+            
+            // Always fallback to ensure app works
+            try {
+                await this.initializeFallbackMode('initialization_error');
                 this.isInitialized = true;
-                resolve(true);
+                console.warn('⚠️ Fallback mode activated after initialization error');
+                return true;
+            } catch (fallbackError) {
+                console.error('❌ Even fallback mode failed:', fallbackError);
+                throw new Error(`TelegramAdapter initialization completely failed: ${error.message}`);
+            }
+        }
+    }
+    
+    /**
+     * Enhanced Telegram availability detection
+     */
+    async detectTelegramAvailability() {
+        // Check for forced fallback mode
+        const forceFallback = localStorage.getItem('fanzone_fallback_mode') === 'true' ||
+                            window.location.search.includes('fallback=true');
+        
+        if (forceFallback) {
+            return {
+                isAvailable: false,
+                forceFallback: true,
+                reason: 'fallback_mode_enabled'
+            };
+        }
+        
+        // Basic availability check
+        if (!window.Telegram || !window.Telegram.WebApp) {
+            return {
+                isAvailable: false,
+                forceFallback: false,
+                reason: 'telegram_api_not_found'
+            };
+        }
+        
+        const webApp = window.Telegram.WebApp;
+        
+        // Check if WebApp is properly initialized
+        if (!webApp.initData && !webApp.initDataUnsafe) {
+            return {
+                isAvailable: false,
+                forceFallback: false,
+                reason: 'telegram_not_initialized'
+            };
+        }
+        
+        // Advanced checks for WebApp readiness
+        try {
+            // Test WebApp methods availability
+            const requiredMethods = ['ready', 'expand', 'close'];
+            const missingMethods = requiredMethods.filter(method => 
+                typeof webApp[method] !== 'function'
+            );
+            
+            if (missingMethods.length > 0) {
+                return {
+                    isAvailable: false,
+                    forceFallback: false,
+                    reason: `missing_methods: ${missingMethods.join(', ')}`
+                };
+            }
+            
+            // Check for platform-specific features
+            const platformFeatures = {
+                mainButton: !!webApp.MainButton,
+                backButton: !!webApp.BackButton,
+                hapticFeedback: !!webApp.HapticFeedback,
+                themingSupport: !!webApp.themeParams
+            };
+            
+            console.log('📋 Telegram platform features:', platformFeatures);
+            
+            // Validate user data if available
+            const userData = webApp.initDataUnsafe?.user;
+            if (userData && (!userData.id || typeof userData.id !== 'number')) {
+                return {
+                    isAvailable: false,
+                    forceFallback: false,
+                    reason: 'invalid_user_data'
+                };
+            }
+            
+            return {
+                isAvailable: true,
+                forceFallback: false,
+                reason: 'telegram_available',
+                features: platformFeatures,
+                userData: userData
+            };
+            
+        } catch (error) {
+            console.warn('Telegram availability check failed:', error);
+            return {
+                isAvailable: false,
+                forceFallback: false,
+                reason: `availability_check_failed: ${error.message}`
+            };
+        }
+    }
+    
+    /**
+     * Initialize Telegram mode with enhanced error handling
+     */
+    async initializeTelegramMode(availability) {
+        this.webApp = window.Telegram.WebApp;
+        
+        console.log('📱 Initializing Telegram Web App mode...');
+        console.log('🔧 Available features:', availability.features);
+        
+        try {
+            // Initialize WebApp with timeout
+            await this.initializeWebAppWithTimeout();
+            
+            // Get and validate user data
+            this.userData = this.webApp.initDataUnsafe?.user;
+            
+            if (!this.userData || !this.userData.id) {
+                throw new Error('Invalid or missing Telegram user data');
+            }
+            
+            // Setup event handlers with error handling
+            await this.setupEventHandlers();
+            
+            // Apply theme if supported
+            if (availability.features?.themingSupport) {
+                this.applyTheme();
+            }
+            
+            // Enable closing confirmation if supported
+            if (typeof this.webApp.enableClosingConfirmation === 'function') {
+                this.webApp.enableClosingConfirmation();
+            }
+            
+            console.log('✅ Telegram mode initialized successfully:', {
+                userId: this.userData.id,
+                username: this.userData.username,
+                firstName: this.userData.first_name,
+                features: Object.keys(availability.features).filter(key => availability.features[key])
+            });
+            
+        } catch (error) {
+            console.error('Failed to initialize Telegram mode:', error);
+            throw new Error(`Telegram mode initialization failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Initialize WebApp with timeout protection
+     */
+    async initializeWebAppWithTimeout(timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error('WebApp initialization timeout'));
+            }, timeout);
+            
+            try {
+                // Call ready and expand
+                this.webApp.ready();
+                
+                // Use a small delay to ensure ready() completes
+                setTimeout(() => {
+                    try {
+                        this.webApp.expand();
+                        clearTimeout(timeoutId);
+                        resolve();
+                    } catch (error) {
+                        clearTimeout(timeoutId);
+                        reject(new Error(`WebApp expand failed: ${error.message}`));
+                    }
+                }, 100);
+                
+            } catch (error) {
+                clearTimeout(timeoutId);
+                reject(new Error(`WebApp ready failed: ${error.message}`));
             }
         });
+    }
+    
+    /**
+     * Initialize fallback mode for non-Telegram environments
+     */
+    async initializeFallbackMode(reason = 'unknown') {
+        console.warn(`⚠️ Initializing fallback mode. Reason: ${reason}`);
+        
+        // Clear Telegram-specific properties
+        this.webApp = null;
+        
+        try {
+            // Check if we have saved user data from previous session
+            const savedUserData = localStorage.getItem('fanzone_fallback_user');
+            
+            if (savedUserData) {
+                try {
+                    this.userData = JSON.parse(savedUserData);
+                    console.log('📱 Restored fallback user data:', this.userData.username);
+                    
+                    // Validate restored data
+                    if (!this.userData.id || !this.userData.username) {
+                        throw new Error('Invalid saved user data');
+                    }
+                } catch (e) {
+                    console.warn('Failed to restore saved user data:', e);
+                    this.createFallbackUser();
+                }
+            } else {
+                this.createFallbackUser();
+            }
+            
+            // Setup fallback environment indicators
+            this.setupFallbackIndicators(reason);
+            
+            console.log('✅ Fallback mode initialized successfully');
+            
+        } catch (error) {
+            console.error('Failed to initialize fallback mode:', error);
+            throw new Error(`Fallback mode initialization failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Setup fallback environment indicators
+     */
+    setupFallbackIndicators(reason) {
+        // Add visual indicator that app is running in fallback mode
+        const indicator = document.createElement('div');
+        indicator.id = 'fallback-indicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #ff9800;
+            color: white;
+            text-align: center;
+            padding: 5px;
+            font-size: 12px;
+            z-index: 10001;
+            display: none;
+        `;
+        indicator.textContent = '⚠️ Development Mode - Not running in Telegram';
+        
+        // Show indicator in development
+        if (window.location.hostname === 'localhost' || 
+            window.location.hostname === '127.0.0.1' ||
+            window.location.search.includes('debug=true')) {
+            indicator.style.display = 'block';
+            
+            // Add option to toggle modes
+            indicator.innerHTML = `
+                ⚠️ Development Mode - Not running in Telegram 
+                <button onclick="window.TelegramAdapter.toggleFallbackMode()" 
+                        style="margin-left: 10px; padding: 2px 8px; background: white; color: #ff9800; border: none; border-radius: 3px; cursor: pointer;">
+                    Toggle Mode
+                </button>
+            `;
+        }
+        
+        document.body.appendChild(indicator);
+        
+        // Store reason in localStorage for debugging
+        localStorage.setItem('fanzone_fallback_reason', reason);
+    }
+    
+    /**
+     * Create fallback user for development/testing
+     */
+    createFallbackUser() {
+        this.userData = {
+            id: Date.now(),
+            first_name: 'Guest',
+            last_name: 'User',
+            username: `guest_${Date.now()}`,
+            language_code: 'en'
+        };
+        
+        // Save fallback user for persistence
+        localStorage.setItem('fanzone_fallback_user', JSON.stringify(this.userData));
+        console.log('👤 Created fallback user:', this.userData.username);
     }
     
     /**
@@ -202,53 +460,167 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
     }
     
     /**
-     * Show main button with text and callback
+     * Show main button with text and callback - Enhanced with async handling
      */
-    showMainButton(text, callback) {
-        if (!this.webApp) {
-            console.warn('Main button not available in development mode');
-            return;
-        }
-        
-        this.mainButtonCallback = callback;
-        this.webApp.MainButton.setText(text);
-        this.webApp.MainButton.color = this.webApp.themeParams?.button_color || '#3390ec';
-        this.webApp.MainButton.textColor = this.webApp.themeParams?.button_text_color || '#ffffff';
-        
-        // Ensure button is enabled and not in progress state
-        this.webApp.MainButton.enable();
-        this.webApp.MainButton.hideProgress();
-        
-        if (!this.webApp.MainButton.isVisible) {
-            this.webApp.MainButton.show();
-        }
-    }
-    
-    /**
-     * Hide main button
-     */
-    hideMainButton() {
-        if (!this.webApp) return;
-        
-        // Ensure progress is hidden before hiding button
-        this.webApp.MainButton.hideProgress();
-        this.webApp.MainButton.hide();
-        this.mainButtonCallback = null;
-    }
-    
-    /**
-     * Show/hide main button loading state
-     */
-    setMainButtonLoading(isLoading) {
-        if (!this.webApp) return;
-        
-        if (isLoading) {
-            this.webApp.MainButton.showProgress(true);
-            this.webApp.MainButton.disable();
-        } else {
-            this.webApp.MainButton.hideProgress();
+    async showMainButton(text, callback) {
+        try {
+            if (!this.webApp?.MainButton) {
+                console.warn('Main button not available in fallback mode');
+                return false;
+            }
+            
+            // Validate parameters
+            if (!text || typeof text !== 'string') {
+                throw new Error('Main button text must be a non-empty string');
+            }
+            
+            if (callback && typeof callback !== 'function') {
+                throw new Error('Main button callback must be a function');
+            }
+            
+            // Store callback for later use
+            this.mainButtonCallback = callback;
+            
+            // Configure button appearance
+            this.webApp.MainButton.setText(text);
+            this.webApp.MainButton.color = this.webApp.themeParams?.button_color || '#3390ec';
+            this.webApp.MainButton.textColor = this.webApp.themeParams?.button_text_color || '#ffffff';
+            
+            // Reset button state
             this.webApp.MainButton.enable();
+            this.webApp.MainButton.hideProgress();
+            
+            // Show button with animation
+            if (!this.webApp.MainButton.isVisible) {
+                this.webApp.MainButton.show();
+            }
+            
+            console.log('✅ Main button shown:', { text, hasCallback: !!callback });
+            return true;
+            
+        } catch (error) {
+            console.error('Failed to show main button:', error);
+            
+            // Use ErrorHandler if available
+            if (window.ErrorHandler) {
+                window.ErrorHandler.logError(error, 'TelegramAdapter.showMainButton', {
+                    category: 'ui_error',
+                    context: { text, hasCallback: !!callback }
+                });
+            }
+            
+            return false;
         }
+    }
+    
+    /**
+     * Hide main button - Enhanced with state management
+     */
+    async hideMainButton() {
+        try {
+            if (!this.webApp?.MainButton) {
+                console.log('Main button not available in fallback mode');
+                return true;
+            }
+            
+            // Reset loading state first
+            if (this.webApp.MainButton.isProgressVisible) {
+                await this.setMainButtonLoading(false);
+            }
+            
+            // Hide button
+            this.webApp.MainButton.hide();
+            this.mainButtonCallback = null;
+            
+            console.log('✅ Main button hidden');
+            return true;
+            
+        } catch (error) {
+            console.error('Failed to hide main button:', error);
+            
+            // Use ErrorHandler if available
+            if (window.ErrorHandler) {
+                window.ErrorHandler.logError(error, 'TelegramAdapter.hideMainButton', {
+                    category: 'ui_error'
+                });
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
+     * Show/hide main button loading state - Enhanced with async handling
+     */
+    async setMainButtonLoading(isLoading, timeout = 10000) {
+        try {
+            if (!this.webApp?.MainButton) {
+                console.log('Main button loading state not available in fallback mode');
+                return false;
+            }
+            
+            if (isLoading) {
+                // Show loading with timeout protection
+                this.webApp.MainButton.showProgress(true);
+                this.webApp.MainButton.disable();
+                
+                // Auto-clear loading state after timeout
+                if (timeout > 0) {
+                    setTimeout(async () => {
+                        if (this.webApp?.MainButton?.isProgressVisible) {
+                            console.warn('Main button loading timeout reached, clearing state');
+                            await this.setMainButtonLoading(false);
+                        }
+                    }, timeout);
+                }
+                
+                console.log('✅ Main button loading state enabled');
+            } else {
+                // Hide loading
+                this.webApp.MainButton.hideProgress();
+                this.webApp.MainButton.enable();
+                
+                console.log('✅ Main button loading state disabled');
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Failed to set main button loading state:', error);
+            
+            // Use ErrorHandler if available
+            if (window.ErrorHandler) {
+                window.ErrorHandler.logError(error, 'TelegramAdapter.setMainButtonLoading', {
+                    category: 'ui_error',
+                    context: { isLoading, timeout }
+                });
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
+     * Get main button state
+     */
+    getMainButtonState() {
+        if (!this.webApp?.MainButton) {
+            return {
+                available: false,
+                visible: false,
+                enabled: false,
+                loading: false,
+                text: null
+            };
+        }
+        
+        return {
+            available: true,
+            visible: this.webApp.MainButton.isVisible,
+            enabled: !this.webApp.MainButton.isProgressVisible,
+            loading: this.webApp.MainButton.isProgressVisible,
+            text: this.webApp.MainButton.text
+        };
     }
     
     /**
@@ -366,7 +738,71 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
      * Check if platform is available
      */
     isAvailable() {
-        return !!(window.Telegram && window.Telegram.WebApp);
+        return !!(this.webApp && window.Telegram && window.Telegram.WebApp);
+    }
+    
+    /**
+     * Toggle between Telegram and fallback mode (for development)
+     */
+    async toggleFallbackMode() {
+        const currentMode = localStorage.getItem('fanzone_fallback_mode') === 'true';
+        const newMode = !currentMode;
+        
+        localStorage.setItem('fanzone_fallback_mode', newMode.toString());
+        
+        console.log(`🔄 Switching to ${newMode ? 'fallback' : 'telegram'} mode`);
+        
+        // Show confirmation
+        if (this.showConfirm) {
+            const confirmed = await this.showConfirm(
+                `Switch to ${newMode ? 'fallback' : 'telegram'} mode? The page will reload.`
+            );
+            
+            if (confirmed) {
+                window.location.reload();
+            }
+        } else {
+            if (confirm(`Switch to ${newMode ? 'fallback' : 'telegram'} mode? The page will reload.`)) {
+                window.location.reload();
+            }
+        }
+    }
+    
+    /**
+     * Get current mode information
+     */
+    getModeInfo() {
+        return {
+            mode: this.webApp ? 'telegram' : 'fallback',
+            isInitialized: this.isInitialized,
+            userData: this.userData,
+            features: this.webApp ? {
+                mainButton: !!this.webApp.MainButton,
+                backButton: !!this.webApp.BackButton,
+                hapticFeedback: !!this.webApp.HapticFeedback,
+                themingSupport: !!this.webApp.themeParams
+            } : null,
+            fallbackReason: localStorage.getItem('fanzone_fallback_reason')
+        };
+    }
+    
+    /**
+     * Validate method availability before calling
+     */
+    isMethodAvailable(methodName) {
+        if (!this.webApp) return false;
+        
+        const methodPath = methodName.split('.');
+        let obj = this.webApp;
+        
+        for (const part of methodPath) {
+            if (!obj || typeof obj[part] === 'undefined') {
+                return false;
+            }
+            obj = obj[part];
+        }
+        
+        return typeof obj === 'function';
     }
     
     /**

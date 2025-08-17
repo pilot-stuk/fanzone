@@ -6,6 +6,8 @@ class FanZoneApplication {
         this.container = container;
         this.currentPage = 'gifts';
         this.isInitialized = false;
+        this.isInitializing = false;
+        this.initializationError = null;
         
         // Services will be injected
         this.logger = null;
@@ -25,16 +27,27 @@ class FanZoneApplication {
      * Initialize the application
      */
     async initialize() {
+        // Prevent multiple initialization attempts
+        if (this.isInitialized) {
+            console.warn('Application already initialized');
+            return;
+        }
+        
+        if (this.isInitializing) {
+            console.warn('Application initialization already in progress');
+            return;
+        }
+        
+        this.isInitializing = true;
+        this.initializationError = null;
+        
         try {
             console.log('🚀 Starting FanZone Application...');
             
             // Show loading screen
             this.showLoading('Initializing FanZone...');
             
-            // Initialize DI Container
-            await this.container.initializeApp();
-            
-            // Get services from container
+            // Get services from container (DIContainer should already be initialized)
             this.injectServices();
             
             // Setup event handlers
@@ -48,6 +61,7 @@ class FanZoneApplication {
             this.showMainApp();
             
             this.isInitialized = true;
+            this.isInitializing = false;
             
             this.logger.info('Application initialized successfully');
             
@@ -60,8 +74,11 @@ class FanZoneApplication {
             }, 500);
             
         } catch (error) {
+            this.isInitializing = false;
+            this.initializationError = error;
             this.logger?.error('Application initialization failed', error);
             this.handleInitializationError(error);
+            throw error; // Re-throw to allow caller to handle
         }
     }
     
@@ -69,14 +86,66 @@ class FanZoneApplication {
      * Inject services from DI container
      */
     injectServices() {
-        this.logger = this.container.get('logger');
-        this.eventBus = this.container.get('eventBus');
-        this.authService = this.container.get('authService');
-        this.userService = this.container.get('userService');
-        this.giftService = this.container.get('giftService');
-        this.platformAdapter = this.container.get('platformAdapter');
+        // Validate container is ready
+        if (!this.container || !this.container.initialized) {
+            throw new Error('DIContainer is not initialized');
+        }
         
-        this.logger.debug('Services injected successfully');
+        try {
+            this.logger = this.container.get('logger');
+            this.eventBus = this.container.get('eventBus');
+            this.authService = this.container.get('authService');
+            this.userService = this.container.get('userService');
+            this.giftService = this.container.get('giftService');
+            this.platformAdapter = this.container.get('platformAdapter');
+            
+            // Validate critical services are available
+            this.validateCriticalServices();
+            
+            this.logger.debug('Services injected successfully');
+        } catch (error) {
+            console.error('Failed to inject services:', error);
+            throw new Error(`Service injection failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Validate that critical services are available and functional
+     */
+    validateCriticalServices() {
+        // Use ServiceValidator for comprehensive validation
+        if (!window.ServiceValidator) {
+            throw new Error('ServiceValidator is not available');
+        }
+        
+        const requiredServices = [
+            { name: 'logger', service: this.logger },
+            { name: 'eventBus', service: this.eventBus },
+            { name: 'authService', service: this.authService },
+            { name: 'userService', service: this.userService },
+            { name: 'giftService', service: this.giftService },
+            { name: 'platformAdapter', service: this.platformAdapter }
+        ];
+        
+        // Validate all services
+        const validation = window.ServiceValidator.validateServices(requiredServices);
+        
+        if (!validation.valid) {
+            const errorDetails = validation.errors.map(e => `${e.service}: ${e.error}`).join('; ');
+            throw new Error(`Service validation failed: ${errorDetails}`);
+        }
+        
+        // Validate critical methods
+        window.ServiceValidator.validateMethod(this.eventBus, 'emit', 'EventBus');
+        window.ServiceValidator.validateMethod(this.eventBus, 'subscribe', 'EventBus');
+        window.ServiceValidator.validateMethod(this.logger, 'info', 'Logger');
+        window.ServiceValidator.validateMethod(this.logger, 'error', 'Logger');
+        
+        // Create validated proxies for services to catch runtime errors
+        this.logger = window.ServiceValidator.createValidatedProxy(this.logger, 'Logger');
+        this.eventBus = window.ServiceValidator.createValidatedProxy(this.eventBus, 'EventBus');
+        
+        console.log('✅ All critical services validated successfully');
     }
     
     /**
@@ -158,7 +227,7 @@ class FanZoneApplication {
         this.updateUserDisplay();
         
         // Setup Telegram UI elements
-        this.setupTelegramUI();
+        await this.setupTelegramUI();
     }
     
     /**
@@ -250,16 +319,40 @@ class FanZoneApplication {
     }
     
     /**
-     * Setup Telegram-specific UI
+     * Setup Telegram-specific UI - Enhanced with async handling
      */
-    setupTelegramUI() {
-        const user = this.authService.getCurrentUser();
-        
-        if (this.platformAdapter.isAvailable() && user) {
-            // Setup main button for new users
-            if (!user.total_gifts || user.total_gifts === 0) {
-                this.platformAdapter.showMainButton('🎁 Start Collecting!', () => {
-                    this.handleMainButtonClick();
+    async setupTelegramUI() {
+        try {
+            const user = this.authService.getCurrentUser();
+            
+            if (this.platformAdapter.isAvailable() && user) {
+                // Setup main button for new users
+                if (!user.total_gifts || user.total_gifts === 0) {
+                    await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
+                        await this.handleMainButtonClick();
+                    });
+                }
+                
+                // Log Telegram UI setup
+                this.logger.debug('Telegram UI setup completed', {
+                    mainButtonShown: !user.total_gifts || user.total_gifts === 0,
+                    userId: user.id
+                });
+            } else {
+                this.logger.debug('Telegram UI setup skipped', {
+                    platformAvailable: this.platformAdapter.isAvailable(),
+                    userAvailable: !!user
+                });
+            }
+            
+        } catch (error) {
+            this.logger.error('Failed to setup Telegram UI:', error);
+            
+            // Use ErrorHandler if available
+            if (window.ErrorHandler) {
+                window.ErrorHandler.logError(error, 'FanZoneApp.setupTelegramUI', {
+                    category: 'ui_error',
+                    userMessage: 'Failed to setup Telegram interface'
                 });
             }
         }
@@ -320,32 +413,49 @@ class FanZoneApplication {
     }
     
     /**
-     * Handle main button click
+     * Handle main button click - Enhanced with async handling
      */
-    handleMainButtonClick() {
-        const user = this.authService.getCurrentUser();
-        
-        // Show loading state on main button
-        this.platformAdapter.setMainButtonLoading(true);
-        
-        if (!user) {
-            // Authenticate first
-            this.authService.authenticate().then(() => {
+    async handleMainButtonClick() {
+        try {
+            const user = this.authService.getCurrentUser();
+            
+            // Show loading state on main button with timeout protection
+            await this.platformAdapter.setMainButtonLoading(true, 15000);
+            
+            if (!user) {
+                // Authenticate first
+                try {
+                    await this.authService.authenticate();
+                    this.navigateToPage('gifts');
+                    
+                    // Hide loading and main button after successful navigation
+                    await this.platformAdapter.setMainButtonLoading(false);
+                    await this.platformAdapter.hideMainButton();
+                    
+                } catch (authError) {
+                    this.logger.error('Authentication failed on main button click', authError);
+                    this.showToast('Please login to start collecting gifts', 'error');
+                    await this.platformAdapter.setMainButtonLoading(false);
+                }
+            } else {
+                // Navigate to gifts page
                 this.navigateToPage('gifts');
+                
                 // Hide loading and main button after navigation
-                this.platformAdapter.setMainButtonLoading(false);
-                this.platformAdapter.hideMainButton();
-            }).catch(error => {
-                this.logger.error('Authentication failed on main button click', error);
-                this.showToast('Please login to start collecting gifts', 'error');
-                this.platformAdapter.setMainButtonLoading(false);
-            });
-        } else {
-            // Navigate to gifts page
-            this.navigateToPage('gifts');
-            // Hide loading and main button after navigation
-            this.platformAdapter.setMainButtonLoading(false);
-            this.platformAdapter.hideMainButton();
+                await this.platformAdapter.setMainButtonLoading(false);
+                await this.platformAdapter.hideMainButton();
+            }
+            
+        } catch (error) {
+            this.logger.error('Main button click handling failed', error);
+            this.showToast('Something went wrong. Please try again.', 'error');
+            
+            // Ensure loading state is cleared
+            try {
+                await this.platformAdapter.setMainButtonLoading(false);
+            } catch (cleanupError) {
+                console.warn('Failed to clear main button loading state:', cleanupError);
+            }
         }
     }
     
@@ -392,17 +502,34 @@ class FanZoneApplication {
     handleInitializationError(error) {
         this.hideLoading();
         
-        let message = 'Failed to initialize application';
-        
-        if (error.message.includes('auth')) {
-            message = 'Authentication failed. Please ensure you\'re opening this from Telegram.';
-        } else if (error.message.includes('network')) {
-            message = 'Network error. Please check your connection.';
+        // Use ErrorHandler for comprehensive error handling
+        if (window.ErrorHandler) {
+            const errorInfo = window.ErrorHandler.handleInitError(error, 'FanZoneApp.initialization');
+            
+            // Show error with recovery option
+            this.showError(errorInfo.userMessage, () => {
+                if (errorInfo.recoveryPossible && errorInfo.recoveryAction) {
+                    window.ErrorHandler.executeRecovery(errorInfo.recoveryAction);
+                } else {
+                    window.location.reload();
+                }
+            });
+        } else {
+            // Fallback error handling
+            let message = 'Failed to initialize application';
+            
+            if (error.message.includes('auth')) {
+                message = 'Authentication failed. Please ensure you\'re opening this from Telegram.';
+            } else if (error.message.includes('network')) {
+                message = 'Network error. Please check your connection.';
+            } else if (error.message.includes('service')) {
+                message = 'Some services failed to load. Please refresh and try again.';
+            }
+            
+            this.showError(message, () => {
+                window.location.reload();
+            });
         }
-        
-        this.showError(message, () => {
-            window.location.reload();
-        });
     }
     
     // UI Helper Methods
@@ -482,8 +609,8 @@ class FanZoneApplication {
 }
 
 
-// Create and export application instance
-window.FanZoneApp = new FanZoneApplication(window.DIContainer);
+// Application will be created after services are initialized
+window.FanZoneApp = null;
 
 // Export for modules
 if (typeof module !== 'undefined' && module.exports) {
