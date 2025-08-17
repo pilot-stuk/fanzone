@@ -131,23 +131,17 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
             
             console.log('📋 Telegram platform features:', platformFeatures);
             
-            // Validate user data if available
+            // Validate user data if available - be more permissive for button functionality
             const userData = webApp.initDataUnsafe?.user;
             if (!userData || !userData.id) {
-                console.warn('⚠️ No Telegram user data available - will use fallback mode');
-                return {
-                    isAvailable: false,
-                    forceFallback: true,
-                    reason: 'no_user_data_available'
-                };
+                console.warn('⚠️ No Telegram user data available - Telegram API available but no user data');
+                // Still allow Telegram mode for button functionality, but log the issue
+                console.warn('Proceeding with Telegram mode anyway to allow button functionality');
             }
             
-            if (userData && (!userData.id || typeof userData.id !== 'number')) {
-                return {
-                    isAvailable: false,
-                    forceFallback: true,
-                    reason: 'invalid_user_data'
-                };
+            if (userData && userData.id && typeof userData.id !== 'number') {
+                console.warn('⚠️ Invalid user data type, but Telegram API is available');
+                // Allow Telegram mode but log the concern
             }
             
             return {
@@ -185,8 +179,17 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
             this.userData = this.webApp.initDataUnsafe?.user;
             
             if (!this.userData || !this.userData.id) {
-                console.warn('⚠️ Telegram user data not available, falling back to development mode');
-                throw new Error('Invalid or missing Telegram user data - will use fallback mode');
+                console.warn('⚠️ Telegram user data not available, creating fallback user for Telegram mode');
+                // Create a fallback user for Telegram mode when user data is missing
+                this.userData = {
+                    id: Math.floor(Math.random() * 1000000) + 1000000, // Random ID for Telegram mode
+                    first_name: 'Telegram',
+                    last_name: 'User',
+                    username: `tg_user_${Date.now()}`,
+                    language_code: 'en',
+                    is_telegram_fallback: true
+                };
+                console.log('Created fallback user for Telegram mode:', this.userData.username);
             }
             
             // Setup event handlers with error handling
@@ -394,12 +397,13 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
         
         // Main button handler - Enhanced with platform-specific validation
         this.webApp.MainButton.onClick(() => {
-            console.log('🔘 Main button clicked', {
+            console.log('🔘 Main button clicked in Telegram app', {
                 hasCallback: !!this.mainButtonCallback,
                 isProgressVisible: this.webApp.MainButton.isProgressVisible,
                 buttonText: this.webApp.MainButton.text,
                 platform: 'telegram',
-                userId: this.userData?.id
+                userId: this.userData?.id,
+                callbackFunction: this.mainButtonCallback?.name || 'anonymous'
             });
             
             // Prevent multiple clicks while processing
@@ -408,17 +412,23 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
                 return;
             }
             
-            // Validate platform state before proceeding
-            if (!this.validatePlatformState()) {
-                console.error('❌ Platform state validation failed');
-                return;
-            }
+            // Show immediate feedback
+            this.sendHapticFeedback('light');
             
             if (this.mainButtonCallback) {
                 console.log('🚀 Executing main button callback with platform validation');
                 // Execute callback with platform context
                 try {
-                    this.mainButtonCallback();
+                    // Call the callback and ensure it's async-safe
+                    const result = this.mainButtonCallback();
+                    
+                    // If callback returns a promise, handle it
+                    if (result && typeof result.then === 'function') {
+                        result.catch(error => {
+                            console.error('Main button callback promise failed:', error);
+                            this.webApp.MainButton.hideProgress();
+                        });
+                    }
                 } catch (error) {
                     console.error('Main button callback failed:', error);
                     this.webApp.MainButton.hideProgress();
@@ -799,7 +809,18 @@ class TelegramAdapter extends window.Interfaces.IPlatformAdapter {
      * Check if platform is available
      */
     isAvailable() {
-        return !!(this.webApp && window.Telegram && window.Telegram.WebApp);
+        const available = !!(this.webApp && window.Telegram && window.Telegram.WebApp);
+        
+        if (!available) {
+            console.log('Platform availability check:', {
+                hasWebApp: !!this.webApp,
+                hasTelegram: !!window.Telegram,
+                hasTelegramWebApp: !!(window.Telegram && window.Telegram.WebApp),
+                isInitialized: this.isInitialized
+            });
+        }
+        
+        return available;
     }
     
     /**

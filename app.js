@@ -488,18 +488,29 @@ class FanZoneApplication {
             if (!isRegistered) {
                 // Telegram platform
                 if (this.platformAdapter.isAvailable()) {
+                    this.logger.info('Setting up Telegram main button for unregistered user');
+                    
                     const buttonShown = await this.platformAdapter.showMainButton('🎁 Start Collecting!', async () => {
-                        await this.handleMainButtonClick();
+                        this.logger.info('Main button callback triggered - starting registration flow');
+                        try {
+                            await this.handleMainButtonClick();
+                        } catch (error) {
+                            this.logger.error('Main button click handler failed:', error);
+                            this.showToast('Registration failed. Please try again.', 'error');
+                        }
                     });
                     
                     this.logger.info('Telegram Start Collecting button setup', { 
                         buttonShown,
                         platform: 'telegram',
-                        userId: this.platformAdapter.getUserData()?.id
+                        userId: this.platformAdapter.getUserData()?.id,
+                        buttonVisible: this.platformAdapter.getMainButtonState()?.visible
                     });
                     
                     if (!buttonShown) {
-                        this.logger.warn('Failed to show Telegram main button');
+                        this.logger.warn('Failed to show Telegram main button - checking platform state');
+                        const platformState = this.platformAdapter.getModeInfo();
+                        this.logger.warn('Platform state:', platformState);
                     }
                 } else {
                     // Web platform - ensure web interface is properly configured
@@ -675,8 +686,12 @@ class FanZoneApplication {
                 // Persist registration state with platform context
                 localStorage.setItem('fanzone_registration_state', JSON.stringify(this.userRegistrationState));
                 
-                // Success - navigate to gifts (this will refresh the controller)
-                this.navigateToPage('gifts');
+                // Show success message immediately
+                this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
+                
+                // Hide loading and main button after successful registration
+                await this.platformAdapter.setMainButtonLoading(false);
+                await this.platformAdapter.hideMainButton();
                 
                 // Force complete reload of gifts controller after registration
                 if (this.giftsController) {
@@ -684,14 +699,20 @@ class FanZoneApplication {
                     this.giftsController.isInitialized = false;
                     await this.giftsController.initialize();
                     this.logger.info('Gifts controller reinitialized after registration');
+                } else {
+                    this.logger.warn('Gifts controller not available, initializing controllers');
+                    this.initializeControllers();
+                    if (this.giftsController) {
+                        await this.giftsController.initialize();
+                    }
                 }
                 
-                // Show success message
-                this.showToast('🎉 Welcome! You can now collect gifts!', 'success');
+                // Success - navigate to gifts (this will refresh the controller)
+                this.navigateToPage('gifts');
                 
-                // Hide loading and main button after successful navigation
-                await this.platformAdapter.setMainButtonLoading(false);
-                await this.platformAdapter.hideMainButton();
+                // Ensure the main app is visible and loading is hidden
+                this.hideLoading();
+                this.showMainApp();
                 
                 this.logger.info('User registration and navigation completed successfully', {
                     userId: user.telegram_id,
